@@ -3,7 +3,6 @@
 
 #include <stddef.h>
 #include <stdint.h>
-#include <stdio.h>
 
 struct mnist {
     uint8_t num_dimensions;
