@@ -43,16 +43,16 @@ int main(int argc, const char** argv) {
     struct dataset_entry entry;
     uint32_t flags = dataset_get_entry(data, 0, &entry);
 
-    log_info("entry 0 begin");
+    printf("entry 0 begin\n");
     if (flags & DATASET_ENTRY_HAS_LABEL) {
-        log_info("label: %hhu", entry.label);
+        printf("label: %hhu\n", entry.label);
     }
 
     if (flags & DATASET_ENTRY_HAS_IMAGE) {
         draw_mnist_digit(&entry);
     }
 
-    log_info("entry 0 end");
+    printf("entry 0 end\n");
 
     dataset_free(data);
     return 0;
