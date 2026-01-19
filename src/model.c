@@ -6,18 +6,17 @@
 #include <string.h>
 #include <stdio.h>
 
-#include <log.h>
-
 #include <nyoravim/mem.h>
+#include <nyoravim/log.h>
 
 model_t* model_alloc(const struct nv_allocator* alloc, uint32_t input_size, uint32_t num_layers,
                      const struct model_layer_spec* layers) {
     if (num_layers < 1) {
-        log_error("each network must have at least 1 layer!");
+        NV_LOG_ERROR("each network must have at least 1 layer!");
         return NULL;
     }
 
-    log_trace("allocating model with %u layers", num_layers);
+    NV_LOG_TRACE("allocating model with %u layers", num_layers);
     size_t model_size = sizeof(model_t) + num_layers * sizeof(struct model_layer);
 
     model_t* model;
@@ -46,7 +45,7 @@ model_t* model_alloc(const struct nv_allocator* alloc, uint32_t input_size, uint
         struct model_layer* layer = &model->layers[i];
         layer->op = layers[i].op;
 
-        log_debug("layer %u: %u>%u, op %u", i, previous_size, current_size, layer->op);
+        NV_LOG_DEBUG("layer %u: %u>%u, op %u", i, previous_size, current_size, layer->op);
 
         layer->biases = mat_alloc(alloc, current_size, 1);
         layer->weights = mat_alloc(alloc, current_size, previous_size);
@@ -106,7 +105,7 @@ static void layer_forwardprop(const struct model_layer* layer, const matrix_t* i
         break;
     default:
         if (layer->op != LAYER_OP_NONE) {
-            log_warn("unknown layer op %u; assuming LAYER_OP_NONE", layer->op);
+            NV_LOG_WARN("unknown layer op %u; assuming LAYER_OP_NONE", layer->op);
         }
 
         /* copy as is */
@@ -130,7 +129,7 @@ static bool read_chunk_from_file(FILE* f, void* buffer, size_t size) {
         size_t bytes_read = fread(buffer, 1, size, f);
         if (bytes_read == 0) {
             /* EOF */
-            log_warn("failed to read entire chunk from file! (%zu bytes missing)", size);
+            NV_LOG_WARN("failed to read entire chunk from file! (%zu bytes missing)", size);
             return false;
         }
 
@@ -151,12 +150,12 @@ struct initial_header {
 static model_t* create_model_from_header(const struct nv_allocator* alloc, FILE* f) {
     struct initial_header initial_header;
     if (!read_chunk_from_file(f, &initial_header, sizeof(struct initial_header))) {
-        log_error("failed to read initial header from model file!");
+        NV_LOG_ERROR("failed to read initial header from model file!");
         return NULL;
     }
 
-    log_debug("layers: %u", initial_header.layer_count);
-    log_debug("input size: %u", initial_header.input_size);
+    NV_LOG_DEBUG("layers: %u", initial_header.layer_count);
+    NV_LOG_DEBUG("input size: %u", initial_header.input_size);
 
     struct model_layer_spec* layer_specs =
         nv_alloc(initial_header.layer_count * sizeof(struct model_layer_spec));
@@ -164,7 +163,7 @@ static model_t* create_model_from_header(const struct nv_allocator* alloc, FILE*
 
     if (!read_chunk_from_file(f, layer_specs,
                               initial_header.layer_count * sizeof(struct model_layer_spec))) {
-        log_error("failed to read layer specs from model file!");
+        NV_LOG_ERROR("failed to read layer specs from model file!");
 
         nv_free(layer_specs);
         return NULL;
@@ -188,15 +187,15 @@ static bool read_matrix_from_file(matrix_t* mat, FILE* f) {
 
 static bool read_layer_from_file(struct model_layer* layer, FILE* f) {
     /* biases before weights */
-    log_trace("biases: %ux%u", layer->biases->rows, layer->biases->columns);
+    NV_LOG_TRACE("biases: %ux%u", layer->biases->rows, layer->biases->columns);
     if (!read_matrix_from_file(layer->biases, f)) {
-        log_error("failed to read layer biases!");
+        NV_LOG_ERROR("failed to read layer biases!");
         return false;
     }
 
-    log_trace("weights: %ux%u", layer->weights->rows, layer->weights->columns);
+    NV_LOG_TRACE("weights: %ux%u", layer->weights->rows, layer->weights->columns);
     if (!read_matrix_from_file(layer->weights, f)) {
-        log_error("failed to read layer weights!");
+        NV_LOG_ERROR("failed to read layer weights!");
         return false;
     }
 
@@ -204,28 +203,28 @@ static bool read_layer_from_file(struct model_layer* layer, FILE* f) {
 }
 
 model_t* model_read_from_path(const struct nv_allocator* alloc, const char* path) {
-    log_debug("reading model from path: %s", path);
+    NV_LOG_DEBUG("reading model from path: %s", path);
 
     FILE* f = fopen(path, "rb");
     if (!f) {
-        log_error("failed to open model at path: %s", path);
+        NV_LOG_ERROR("failed to open model at path: %s", path);
         return NULL;
     }
 
     model_t* model = create_model_from_header(alloc, f);
     if (!model) {
-        log_error("failed to allocate model from file header!");
+        NV_LOG_ERROR("failed to allocate model from file header!");
 
         fclose(f);
         return NULL;
     }
 
     for (uint32_t i = 0; i < model->num_layers; i++) {
-        log_trace("reading layer %u", i);
+        NV_LOG_TRACE("reading layer %u", i);
 
         struct model_layer* layer = &model->layers[i];
         if (!read_layer_from_file(layer, f)) {
-            log_error("failed to read layer %u from file!", i);
+            NV_LOG_ERROR("failed to read layer %u from file!", i);
 
             fclose(f);
             model_free(model);
@@ -241,7 +240,7 @@ static bool write_chunk_to_file(FILE* f, const void* data, size_t size) {
     while (size > 0) {
         size_t bytes_written = fwrite(data, 1, size, f);
         if (bytes_written == 0) {
-            log_error("failed to write complete chunk to file!");
+            NV_LOG_ERROR("failed to write complete chunk to file!");
             return false;
         }
 
@@ -268,7 +267,7 @@ static bool serialize_model(const model_t* model, FILE* f) {
     initial_header.input_size = model->layers[0].weights->columns;
 
     if (!write_chunk_to_file(f, &initial_header, sizeof(struct initial_header))) {
-        log_error("failed to write initial header to file!");
+        NV_LOG_ERROR("failed to write initial header to file!");
         return false;
     }
 
@@ -281,7 +280,7 @@ static bool serialize_model(const model_t* model, FILE* f) {
         spec.size = layer->weights->rows;
 
         if (!write_chunk_to_file(f, &spec, sizeof(struct model_layer_spec))) {
-            log_error("failed to write layer spec to file!");
+            NV_LOG_ERROR("failed to write layer spec to file!");
             return false;
         }
     }
@@ -292,12 +291,12 @@ static bool serialize_model(const model_t* model, FILE* f) {
 
         /* biases before weights */
         if (!write_matrix_to_file(f, layer->biases)) {
-            log_error("failed to write layer biases to file!");
+            NV_LOG_ERROR("failed to write layer biases to file!");
             return false;
         }
 
         if (!write_matrix_to_file(f, layer->weights)) {
-            log_error("failed to write layer weights to file!");
+            NV_LOG_ERROR("failed to write layer weights to file!");
             return false;
         }
     }
@@ -306,11 +305,11 @@ static bool serialize_model(const model_t* model, FILE* f) {
 }
 
 bool model_write_to_path(const model_t* model, const char* path) {
-    log_debug("writing model to path: %s", path);
+    NV_LOG_DEBUG("writing model to path: %s", path);
 
     FILE* f = fopen(path, "wb");
     if (!f) {
-        log_error("failed to write to model at path: %s", path);
+        NV_LOG_ERROR("failed to write to model at path: %s", path);
         return NULL;
     }
 

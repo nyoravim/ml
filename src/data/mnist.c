@@ -9,8 +9,7 @@
 #include <zlib.h>
 
 #include <nyoravim/mem.h>
-
-#include <log.c>
+#include <nyoravim/log.h>
 
 struct mnist_parse_context {
     struct mnist* data;
@@ -68,17 +67,17 @@ static bool consume_data(const void* data, size_t size, struct mnist_parse_conte
 
             /* is this 0x08xx? */
             if ((ne & ~(uint32_t)0xFF) != 0x800) {
-                log_error("invalid magic number: 0x%X", ne);
+                NV_LOG_ERROR("invalid magic number: 0x%X", ne);
                 return false;
             }
 
             ctx->data->num_dimensions = ne & 0xFF;
             if (ctx->data->num_dimensions == 0) {
-                log_error("dimension byte set as 0!");
+                NV_LOG_ERROR("dimension byte set as 0!");
                 return false;
             }
 
-            log_debug("%hhu matrix dimensions", ctx->data->num_dimensions);
+            NV_LOG_DEBUG("%hhu matrix dimensions", ctx->data->num_dimensions);
 
             ctx->data->dimensions = nv_alloc(ctx->data->num_dimensions * sizeof(uint32_t));
             assert(ctx->data->dimensions);
@@ -87,7 +86,7 @@ static bool consume_data(const void* data, size_t size, struct mnist_parse_conte
             size_t dimension_index = ctx->header_values_read - 1;
 
             ctx->data->dimensions[dimension_index] = ne;
-            log_debug("dimension %zu: %u", dimension_index, ne);
+            NV_LOG_DEBUG("dimension %zu: %u", dimension_index, ne);
         }
 
         *bytes_processed = sizeof(uint32_t);
@@ -139,7 +138,7 @@ static bool read_chunk(const void* data, size_t size, struct mnist_parse_context
 struct mnist* mnist_load(const char* path) {
     gzFile file = gzopen(path, "rb");
     if (!file) {
-        log_error("failed to open gz file for reading: %s", path);
+        NV_LOG_ERROR("failed to open gz file for reading: %s", path);
         return NULL;
     }
 
@@ -176,7 +175,7 @@ struct mnist* mnist_load(const char* path) {
     if (is_data_complete(&ctx)) {
         return ctx.data;
     } else {
-        log_warn("data not complete; discarding");
+        NV_LOG_WARN("data not complete; discarding");
 
         mnist_free(ctx.data);
         return NULL;

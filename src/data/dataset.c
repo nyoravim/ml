@@ -6,9 +6,8 @@
 #include <assert.h>
 #include <string.h>
 
-#include <log.h>
-
 #include <nyoravim/mem.h>
+#include <nyoravim/log.h>
 
 struct label_data {
     uint32_t num;
@@ -28,7 +27,7 @@ typedef struct dataset {
 } dataset_t;
 
 static bool load_labels(const char* label_path, struct label_data* data) {
-    log_info("loading label file: %s", label_path);
+    NV_LOG_INFO("loading label file: %s", label_path);
 
     struct mnist* labels = mnist_load(label_path);
     if (!labels) {
@@ -36,7 +35,7 @@ static bool load_labels(const char* label_path, struct label_data* data) {
     }
 
     if (labels->num_dimensions != 1) {
-        log_error("label file has more than one dimension!");
+        NV_LOG_ERROR("label file has more than one dimension!");
 
         mnist_free(labels);
         return false;
@@ -49,7 +48,7 @@ static bool load_labels(const char* label_path, struct label_data* data) {
 }
 
 static bool load_images(const char* image_path, struct image_data* data) {
-    log_info("loading image file: %s", image_path);
+    NV_LOG_INFO("loading image file: %s", image_path);
 
     struct mnist* images = mnist_load(image_path);
     if (!images) {
@@ -57,7 +56,7 @@ static bool load_images(const char* image_path, struct image_data* data) {
     }
 
     if (images->num_dimensions != 3) {
-        log_error("label file must have 3 dimensions: entries, rows, columns");
+        NV_LOG_ERROR("label file must have 3 dimensions: entries, rows, columns");
 
         mnist_free(images);
         return false;
@@ -74,28 +73,28 @@ static bool load_images(const char* image_path, struct image_data* data) {
 }
 
 dataset_t* dataset_load(const char* label_path, const char* image_path) {
-    log_trace("loading dataset");
+    NV_LOG_TRACE("loading dataset");
 
     dataset_t* dataset = nv_alloc(sizeof(dataset_t));
     assert(dataset);
     memset(dataset, 0, sizeof(dataset_t));
 
     if (!load_labels(label_path, &dataset->labels)) {
-        log_error("failed to load label file!");
+        NV_LOG_ERROR("failed to load label file!");
 
         dataset_free(dataset);
         return NULL;
     }
 
     if (!load_images(image_path, &dataset->images)) {
-        log_error("failed to load image file!");
+        NV_LOG_ERROR("failed to load image file!");
 
         dataset_free(dataset);
         return NULL;
     }
 
     if (dataset->images.num != dataset->labels.num) {
-        log_warn("images & labels do not match in number! (%u vs %u)", dataset->images.num,
+        NV_LOG_WARN("images & labels do not match in number! (%u vs %u)", dataset->images.num,
                  dataset->labels.num);
     }
 

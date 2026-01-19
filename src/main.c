@@ -7,9 +7,8 @@
 #include <stdio.h>
 #include <string.h>
 
-#include <log.h>
-
 #include <nyoravim/map.h>
+#include <nyoravim/log.h>
 
 /* for access(2) */
 #include <fcntl.h>
@@ -66,26 +65,26 @@ static struct dataset* load_dataset_by_id(uint32_t id) {
 
         break;
     default:
-        log_warn("invalid dataset id: %u", id);
+        NV_LOG_WARN("invalid dataset id: %u", id);
         return NULL;
     }
 
-    log_debug("loading %s dataset", name);
+    NV_LOG_DEBUG("loading %s dataset", name);
 
     struct dataset* data = dataset_load(labels, images);
     if (!data) {
-        log_error("failed to load %s dataset!", name);
+        NV_LOG_ERROR("failed to load %s dataset!", name);
         return NULL;
     }
 
-    log_info("loaded %s dataset", name);
+    NV_LOG_INFO("loaded %s dataset", name);
     return data;
 }
 
 static void free_dataset(void* user, void* value) { dataset_free(value); }
 
 static nv_map_t* load_datasets() {
-    log_trace("loading datasets");
+    NV_LOG_TRACE("loading datasets");
 
     struct nv_map_callbacks callbacks;
     memset(&callbacks, 0, sizeof(struct nv_map_callbacks));
@@ -119,7 +118,7 @@ static bool file_exists(const char* path) {
 
 static model_t* create_model(const struct nv_allocator* alloc, const char* path) {
     if (!is_file_writable(path)) {
-        log_error("cannot write to path %s; aborting", path);
+        NV_LOG_ERROR("cannot write to path %s; aborting", path);
         return NULL;
     }
 
@@ -135,19 +134,19 @@ static model_t* create_model(const struct nv_allocator* alloc, const char* path)
     layers[2].op = LAYER_OP_SOFTMAX;
     layers[2].size = 10;
 
-    log_debug("manually allocating model with %u layers", layer_count);
+    NV_LOG_DEBUG("manually allocating model with %u layers", layer_count);
 
     model_t* model = model_alloc(alloc, 28 * 28, layer_count, layers);
     if (!model) {
-        log_error("failed to manually allocate model!");
+        NV_LOG_ERROR("failed to manually allocate model!");
         return NULL;
     }
 
-    log_trace("randomizing model");
+    NV_LOG_TRACE("randomizing model");
     model_randomize(NULL, model);
 
     if (!model_write_to_path(model, path)) {
-        log_error("failed to write model to path %s", path);
+        NV_LOG_ERROR("failed to write model to path %s", path);
         
         model_free(model);
         return NULL;
@@ -158,10 +157,10 @@ static model_t* create_model(const struct nv_allocator* alloc, const char* path)
 
 static model_t* open_model(const struct nv_allocator* alloc, const char* path) {
     if (file_exists(path)) {
-        log_info("file %s exists; reading", path);
+        NV_LOG_INFO("file %s exists; reading", path);
         return model_read_from_path(alloc, path);
     } else {
-        log_info("file %s does not exist; creating new model and writing", path);
+        NV_LOG_INFO("file %s does not exist; creating new model and writing", path);
         return create_model(alloc, path);
     }
 }
@@ -179,6 +178,17 @@ static void cleanup_context(const struct model_context* ctx) {
 }
 
 int main(int argc, const char** argv) {
+    struct nv_logger_sink stdout_sink;
+    nv_create_stdout_sink(&stdout_sink);
+    stdout_sink.level = NV_LOG_LEVEL_TRACE;
+
+    struct nv_logger logger;
+    logger.level = NV_LOG_LEVEL_TRACE;
+    logger.sink_count = 1;
+    logger.sinks = &stdout_sink;
+
+    nv_set_default_logger(&logger);
+
     struct model_context ctx;
     memset(&ctx, 0, sizeof(struct model_context));
 

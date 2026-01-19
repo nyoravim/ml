@@ -1,3 +1,0 @@
-[submodule "vendor/log.c"]
-	path = vendor/log.c
-	url = https://github.com/rxi/log.c

@@ -7,11 +7,10 @@
 #include <math.h>
 
 #include <nyoravim/mem.h>
-
-#include <log.h>
+#include <nyoravim/log.h>
 
 matrix_t* mat_alloc(const struct nv_allocator* alloc, uint32_t rows, uint32_t columns) {
-    log_trace("allocating %ux%u matrix %s an allocator", rows, columns, alloc ? "with" : "without");
+    NV_LOG_TRACE("allocating %ux%u matrix %s an allocator", rows, columns, alloc ? "with" : "without");
 
     size_t meta_size = sizeof(matrix_t);
     size_t data_size = sizeof(float) * rows * columns;
