@@ -1,21 +1,21 @@
+#include "matrix.h"
 #include "data/dataset.h"
 
 #include <stdio.h>
 
 #include <log.h>
 
-static void draw_mnist_digit(const struct dataset_entry* entry) {
+static void draw_mnist_digit(const matrix_t* mat) {
     /* over rows */
-    for (uint32_t y = 0; y < entry->height; y++) {
+    for (uint32_t y = 0; y < mat->rows; y++) {
 
         /* over columns */
-        for (uint32_t x = 0; x < entry->width; x++) {
-            uint8_t value = entry->image[y * entry->width + x];
+        for (uint32_t x = 0; x < mat->columns; x++) {
+            float value = mat->data[y * mat->columns + x];
 
-            /* from 256 steps down to 24 with an offset of 232. see
+            /* 24 steps w/ offset of 232. see
              * https://gist.github.com/fnky/458719343aabd01cfb17a3a4f7296797 */
-            float lightness = (float)value / 255.f;
-            uint8_t color = 232 + (uint8_t)(lightness * 23.f);
+            uint8_t color = 232 + (uint8_t)(value * 23.f);
 
             /* two spaces to make the pixel fairly square */
             printf("\x1b[48;5;%hhum  ", color);
@@ -41,7 +41,7 @@ int main(int argc, const char** argv) {
     log_info("labels: %u", dataset_get_label_count(data));
 
     struct dataset_entry entry;
-    uint32_t flags = dataset_get_entry(data, 0, &entry);
+    uint32_t flags = dataset_get_entry(data, 0, NULL, &entry);
 
     printf("entry 0 begin\n");
     if (flags & DATASET_ENTRY_HAS_LABEL) {
@@ -49,7 +49,8 @@ int main(int argc, const char** argv) {
     }
 
     if (flags & DATASET_ENTRY_HAS_IMAGE) {
-        draw_mnist_digit(&entry);
+        draw_mnist_digit(entry.image);
+        mat_free(NULL, entry.image);
     }
 
     printf("entry 0 end\n");

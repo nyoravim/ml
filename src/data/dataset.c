@@ -1,6 +1,8 @@
 #include "dataset.h"
 #include "mnist.h"
 
+#include "../matrix.h"
+
 #include <assert.h>
 #include <string.h>
 
@@ -114,15 +116,21 @@ void dataset_free(dataset_t* data) {
 uint32_t dataset_get_image_count(const dataset_t* data) { return data->images.num; }
 uint32_t dataset_get_label_count(const dataset_t* data) { return data->labels.num; }
 
-uint32_t dataset_get_entry(const dataset_t* data, uint32_t index, struct dataset_entry* entry) {
+uint32_t dataset_get_entry(const dataset_t* data, uint32_t index, const struct nv_allocator* alloc,
+                           struct dataset_entry* entry) {
     uint32_t flags = 0;
 
     if (index < data->images.num) {
-        entry->width = data->images.width;
-        entry->height = data->images.height;
-
         uint32_t offsets[] = { index, 0, 0 };
-        entry->image = mnist_get_data(data->images.data, offsets);
+        const uint8_t* image = mnist_get_data(data->images.data, offsets);
+
+        entry->image = mat_alloc(alloc, data->images.height, data->images.width);
+        assert(entry->image);
+
+        uint32_t total = data->images.width * data->images.height;
+        for (uint32_t i = 0; i < total; i++) {
+            entry->image->data[i] = (float)image[i] / 255;
+        }
 
         flags |= DATASET_ENTRY_HAS_IMAGE;
     }

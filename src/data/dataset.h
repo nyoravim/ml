@@ -6,10 +6,11 @@
 
 typedef struct dataset dataset_t;
 
-struct dataset_entry {
-    const uint8_t* image;
-    uint32_t width, height;
+/* from ../matrix.h */
+typedef struct matrix matrix_t;
 
+struct dataset_entry {
+    matrix_t* image;
     uint8_t label;
 };
 
@@ -25,7 +26,10 @@ enum {
     DATASET_ENTRY_HAS_ALL = DATASET_ENTRY_HAS_IMAGE | DATASET_ENTRY_HAS_LABEL,
 };
 
+struct nv_allocator;
+
 /* returns flags (DATASET_ENTRY_HAS_*) */
-uint32_t dataset_get_entry(const dataset_t* data, uint32_t index, struct dataset_entry* entry);
+uint32_t dataset_get_entry(const dataset_t* data, uint32_t index, const struct nv_allocator* alloc,
+                           struct dataset_entry* entry);
 
 #endif

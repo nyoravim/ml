@@ -32,6 +32,10 @@ matrix_t* mat_alloc(const struct nv_allocator* alloc, uint32_t rows, uint32_t co
 }
 
 void mat_free(const struct nv_allocator* alloc, matrix_t* mat) {
+    if (!mat) {
+        return;
+    }
+
     if (!alloc) {
         nv_free(mat);
     } else if (alloc->free) {
