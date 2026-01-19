@@ -59,7 +59,7 @@ static struct dataset* load_dataset_by_id(uint32_t id) {
 
         break;
     default:
-        log_warn("invalid dataset: %u", id);
+        log_warn("invalid dataset id: %u", id);
         return NULL;
     }
 

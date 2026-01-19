@@ -2,6 +2,7 @@
 #define _MODEL_H
 
 #include <stdint.h>
+#include <stdbool.h>
 
 /* from matrix.h */
 typedef struct matrix matrix_t;
@@ -45,5 +46,8 @@ void model_free(model_t* model);
 
 void model_forwardprop(const model_t* nn, const matrix_t* input,
                        struct forwardprop_layer_output* output);
+
+model_t* model_read_from_path(const struct nv_allocator* alloc, const char* path);
+bool model_write_to_path(const model_t* model, const char* path);
 
 #endif

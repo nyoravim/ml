@@ -4,6 +4,7 @@
 
 #include <assert.h>
 #include <string.h>
+#include <stdio.h>
 
 #include <log.h>
 
@@ -42,6 +43,8 @@ model_t* model_alloc(const struct nv_allocator* alloc, uint32_t input_size, uint
 
         struct model_layer* layer = &model->layers[i];
         layer->op = layers[i].op;
+
+        log_debug("layer %u: %u after %u, op %u", current_size, previous_size, layer->op);
 
         layer->biases = mat_alloc(alloc, current_size, 1);
         layer->weights = mat_alloc(alloc, current_size, previous_size);
@@ -110,3 +113,117 @@ void model_forwardprop(const model_t* model, const matrix_t* input,
         layer_forwardprop(&model->layers[i], layer_input, &output[i]);
     }
 }
+
+static bool read_chunk_from_file(FILE* f, void* buffer, size_t size) {
+    while (size > 0) {
+        size_t bytes_read = fread(buffer, 1, size, f);
+        if (bytes_read == 0) {
+            /* EOF */
+            log_warn("failed to read entire chunk from file! (%zu bytes missing)", size);
+            return false;
+        }
+
+        assert(bytes_read <= size);
+
+        buffer += bytes_read;
+        size -= bytes_read;
+    }
+
+    return true;
+}
+
+struct initial_header {
+    uint32_t layer_count;
+    uint32_t input_size;
+};
+
+static model_t* create_model_from_header(const struct nv_allocator* alloc, FILE* f) {
+    struct initial_header initial_header;
+    if (!read_chunk_from_file(f, &initial_header, sizeof(struct initial_header))) {
+        log_error("failed to read initial header from model file!");
+        return NULL;
+    }
+
+    log_debug("layers: %u", initial_header.layer_count);
+    log_debug("input size: %u", initial_header.input_size);
+
+    struct model_layer_spec* layer_specs =
+        nv_alloc(initial_header.layer_count * sizeof(struct model_layer_spec));
+    assert(layer_specs);
+
+    if (!read_chunk_from_file(f, layer_specs,
+                              initial_header.layer_count * sizeof(struct model_layer_spec))) {
+        log_error("failed to read layer specs from model file!");
+
+        nv_free(layer_specs);
+        return NULL;
+    }
+
+    model_t* model =
+        model_alloc(alloc, initial_header.input_size, initial_header.layer_count, layer_specs);
+
+    nv_free(layer_specs);
+    if (!model) {
+        return NULL;
+    }
+
+    return model;
+}
+
+static bool read_matrix_from_file(matrix_t* mat, FILE* f) {
+    size_t total_size = sizeof(float) * mat->rows * mat->columns;
+    return read_chunk_from_file(f, mat->data, total_size);
+}
+
+static bool read_layer_from_file(struct model_layer* layer, FILE* f) {
+    /* biases before weights */
+    log_trace("biases: %ux%u", layer->biases->rows, layer->biases->columns);
+    if (!read_matrix_from_file(layer->biases, f)) {
+        log_error("failed to read layer biases!");
+        return false;
+    }
+
+    log_trace("weights: %ux%u", layer->weights->rows, layer->weights->columns);
+    if (!read_matrix_from_file(layer->weights, f)) {
+        log_error("failed to read layer weights!");
+        return false;
+    }
+
+    return true;
+}
+
+model_t* model_read_from_path(const struct nv_allocator* alloc, const char* path) {
+    log_debug("reading model from path: %s", path);
+
+    FILE* f = fopen(path, "rb");
+    if (!f) {
+        log_error("failed to open model at path: %s", path);
+        return NULL;
+    }
+
+    model_t* model = create_model_from_header(alloc, f);
+    if (!model) {
+        log_error("failed to allocate model from file header!");
+
+        fclose(f);
+        return NULL;
+    }
+
+    for (uint32_t i = 0; i < model->num_layers; i++) {
+        log_trace("reading layer %u", i);
+
+        struct model_layer* layer = &model->layers[i];
+        if (!read_layer_from_file(layer, f)) {
+            log_error("failed to read layer %u from file!", i);
+            
+            fclose(f);
+            model_free(model);
+
+            return NULL;
+        }
+    }
+
+    return model;
+}
+
+bool model_write_to_path(const model_t* model, const char* path);
