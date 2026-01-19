@@ -28,7 +28,8 @@ enum {
 
 struct nv_allocator;
 
-/* returns flags (DATASET_ENTRY_HAS_*) */
+/* returns flags (DATASET_ENTRY_HAS_*). if DATASET_ENTRY_HAS_IMAGE is set, it is the user's
+ * responsibility to free entry->image */
 uint32_t dataset_get_entry(const dataset_t* data, uint32_t index, const struct nv_allocator* alloc,
                            struct dataset_entry* entry);
 

@@ -1,11 +1,15 @@
 #include "matrix.h"
 #include "data/dataset.h"
 
+#include <assert.h>
 #include <stdio.h>
+#include <string.h>
 
 #include <log.h>
 
-static void draw_mnist_digit(const matrix_t* mat) {
+#include <nyoravim/map.h>
+
+static void draw_matrix(const matrix_t* mat) {
     /* over rows */
     for (uint32_t y = 0; y < mat->rows; y++) {
 
@@ -29,32 +33,71 @@ static void draw_mnist_digit(const matrix_t* mat) {
     printf("\x1b[0m");
 }
 
-int main(int argc, const char** argv) {
-    struct dataset* data =
-        dataset_load("data/train-labels-idx1-ubyte.gz", "data/train-images-idx3-ubyte.gz");
+enum {
+    DATASET_TRAINING = 0,
+    DATASET_TESTING,
 
-    if (!data) {
+    DATASET_COUNT,
+};
+
+static struct dataset* load_dataset_by_id(uint32_t id) {
+    const char* labels;
+    const char* images;
+
+    switch (id) {
+    case DATASET_TRAINING:
+        labels = "data/train-labels-idx1-ubyte.gz";
+        images = "data/train-images-idx3-ubyte.gz";
+
+        log_info("loading training dataset");
+        break;
+    case DATASET_TESTING:
+        labels = "data/t10k-labels-idx1-ubyte.gz";
+        images = "data/t10k-images-idx3-ubyte.gz";
+
+        log_info("loading testing dataset");
+        break;
+    default:
+        log_warn("invalid dataset: %u", id);
+        return NULL;
+    }
+
+    return dataset_load(labels, images);
+}
+
+static void free_dataset(void* user, void* value) { dataset_free(value); }
+
+static nv_map_t* load_datasets() {
+    struct nv_map_callbacks callbacks;
+    memset(&callbacks, 0, sizeof(struct nv_map_callbacks));
+
+    callbacks.free_value = free_dataset;
+
+    nv_map_t* datasets = nv_map_alloc(8, &callbacks);
+    assert(datasets);
+
+    for (uint32_t id = 0; id < DATASET_COUNT; id++) {
+        struct dataset* data = load_dataset_by_id(id);
+        if (!data) {
+            log_error("failed to load dataset id %u!", id);
+            continue;
+        }
+
+        nv_map_insert(datasets, (void*)(size_t)id, data);
+    }
+
+    return datasets;
+}
+
+int main(int argc, const char** argv) {
+    log_info("loading datasets");
+
+    nv_map_t* datasets = load_datasets();
+    if (nv_map_size(datasets) < DATASET_COUNT) {
+        nv_map_free(datasets);
         return 1;
     }
 
-    log_info("images: %u", dataset_get_image_count(data));
-    log_info("labels: %u", dataset_get_label_count(data));
-
-    for (uint32_t i = 0; i < 10; i++) {
-        struct dataset_entry entry;
-        uint32_t flags = dataset_get_entry(data, i, NULL, &entry);
-
-        printf("entry %u\n", i);
-        if (flags & DATASET_ENTRY_HAS_LABEL) {
-            printf("label: %hhu\n", entry.label);
-        }
-
-        if (flags & DATASET_ENTRY_HAS_IMAGE) {
-            draw_mnist_digit(entry.image);
-            mat_free(NULL, entry.image);
-        }
-    }
-
-    dataset_free(data);
+    nv_map_free(datasets);
     return 0;
 }
