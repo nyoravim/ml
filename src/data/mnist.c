@@ -196,9 +196,12 @@ void mnist_free(struct mnist* data) {
 const uint8_t* mnist_get_data(const struct mnist* data, const uint32_t* offsets) {
     size_t offset = 0;
     for (uint8_t i = 0; i < data->num_dimensions; i++) {
-        for (uint8_t j = 0; j < i; j++) {
-            offset += data->dimensions[i] * offsets[j];
+        size_t byte_offset = offsets[i];
+        for (uint8_t j = i + 1; j < data->num_dimensions; j++) {
+            byte_offset *= data->dimensions[j];
         }
+
+        offset += byte_offset;
     }
 
     return data->data + offset;

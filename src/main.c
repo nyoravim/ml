@@ -40,20 +40,20 @@ int main(int argc, const char** argv) {
     log_info("images: %u", dataset_get_image_count(data));
     log_info("labels: %u", dataset_get_label_count(data));
 
-    struct dataset_entry entry;
-    uint32_t flags = dataset_get_entry(data, 0, NULL, &entry);
+    for (uint32_t i = 0; i < 10; i++) {
+        struct dataset_entry entry;
+        uint32_t flags = dataset_get_entry(data, i, NULL, &entry);
 
-    printf("entry 0 begin\n");
-    if (flags & DATASET_ENTRY_HAS_LABEL) {
-        printf("label: %hhu\n", entry.label);
+        printf("entry %u\n", i);
+        if (flags & DATASET_ENTRY_HAS_LABEL) {
+            printf("label: %hhu\n", entry.label);
+        }
+
+        if (flags & DATASET_ENTRY_HAS_IMAGE) {
+            draw_mnist_digit(entry.image);
+            mat_free(NULL, entry.image);
+        }
     }
-
-    if (flags & DATASET_ENTRY_HAS_IMAGE) {
-        draw_mnist_digit(entry.image);
-        mat_free(NULL, entry.image);
-    }
-
-    printf("entry 0 end\n");
 
     dataset_free(data);
     return 0;
