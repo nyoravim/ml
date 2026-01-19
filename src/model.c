@@ -44,7 +44,7 @@ model_t* model_alloc(const struct nv_allocator* alloc, uint32_t input_size, uint
         struct model_layer* layer = &model->layers[i];
         layer->op = layers[i].op;
 
-        log_debug("layer %u: %u after %u, op %u", current_size, previous_size, layer->op);
+        log_debug("layer %u: %u after %u, op %u", i, current_size, previous_size, layer->op);
 
         layer->biases = mat_alloc(alloc, current_size, 1);
         layer->weights = mat_alloc(alloc, current_size, previous_size);
@@ -226,4 +226,85 @@ model_t* model_read_from_path(const struct nv_allocator* alloc, const char* path
     return model;
 }
 
-bool model_write_to_path(const model_t* model, const char* path);
+static bool write_chunk_to_file(FILE* f, const void* data, size_t size) {
+    while (size > 0) {
+        size_t bytes_written = fwrite(data, 1, size, f);
+        if (bytes_written == 0) {
+            log_error("failed to write complete chunk to file!");
+            return false;
+        }
+
+        assert(bytes_written <= size);
+
+        data += bytes_written;
+        size -= bytes_written;
+    }
+
+    return true;
+}
+
+static bool write_matrix_to_file(FILE* f, const matrix_t* mat) {
+    size_t total_size = sizeof(float) * mat->rows * mat->columns;
+    return write_chunk_to_file(f, mat->data, total_size);
+}
+
+static bool serialize_model(const model_t* model, FILE* f) {
+    assert(model->num_layers > 0);
+
+    /* initial header data */
+    struct initial_header initial_header;
+    initial_header.layer_count = model->num_layers;
+    initial_header.input_size = model->layers[0].weights->columns;
+
+    if (!write_chunk_to_file(f, &initial_header, sizeof(struct initial_header))) {
+        log_error("failed to write initial header to file!");
+        return false;
+    }
+
+    /* layer sizes and operations */
+    for (uint32_t i = 0; i < model->num_layers; i++) {
+        const struct model_layer* layer = &model->layers[i];
+
+        struct model_layer_spec spec;
+        spec.op = layer->op;
+        spec.size = layer->weights->rows;
+
+        if (!write_chunk_to_file(f, &spec, sizeof(struct model_layer_spec))) {
+            log_error("failed to write layer spec to file!");
+            return false;
+        }
+    }
+
+    /* layer data */
+    for (uint32_t i = 0; i < model->num_layers; i++) {
+        const struct model_layer* layer = &model->layers[i];
+
+        /* biases before weights */
+        if (!write_matrix_to_file(f, layer->biases)) {
+            log_error("failed to write layer biases to file!");
+            return false;
+        }
+
+        if (!write_matrix_to_file(f, layer->weights)) {
+            log_error("failed to write layer weights to file!");
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool model_write_to_path(const model_t* model, const char* path) {
+    log_debug("writing model to path: %s");
+
+    FILE* f = fopen(path, "wb");
+    if (!f) {
+        log_error("failed to write to model at path: %s", path);
+        return NULL;
+    }
+
+    bool success = serialize_model(model, f);
+    fclose(f);
+
+    return success;
+}

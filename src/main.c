@@ -1,4 +1,6 @@
 #include "matrix.h"
+#include "model.h"
+
 #include "data/dataset.h"
 
 #include <assert.h>
@@ -8,6 +10,11 @@
 #include <log.h>
 
 #include <nyoravim/map.h>
+
+/* for access(2) */
+#include <fcntl.h>
+#include <unistd.h>
+#include <errno.h>
 
 static void draw_matrix(const matrix_t* mat) {
     /* over rows */
@@ -100,13 +107,89 @@ static nv_map_t* load_datasets() {
     return datasets;
 }
 
+static bool is_file_writable(const char* path) {
+    int ret = access(path, W_OK);
+    return ret == 0 || errno != EACCES;
+}
+
+static bool file_exists(const char* path) {
+    int ret = access(path, F_OK);
+    return ret == 0 || errno != ENOENT;
+}
+
+static model_t* create_model(const struct nv_allocator* alloc, const char* path) {
+    if (!is_file_writable(path)) {
+        log_error("cannot write to path %s; aborting", path);
+        return NULL;
+    }
+
+    static const uint32_t layer_count = 3;
+    struct model_layer_spec layers[layer_count];
+
+    layers[0].op = LAYER_OP_SIGMOID;
+    layers[0].size = 128;
+    
+    layers[1].op = LAYER_OP_SIGMOID;
+    layers[1].size = 64;
+
+    layers[2].op = LAYER_OP_SOFTMAX;
+    layers[2].size = 10;
+
+    log_debug("manually allocating model with %u layers", layer_count);
+
+    model_t* model = model_alloc(alloc, 28 * 28, layer_count, layers);
+    if (!model) {
+        log_error("failed to manually allocate model!");
+        return NULL;
+    }
+
+    /* todo: randomize */
+
+    if (!model_write_to_path(model, path)) {
+        log_error("failed to write model to path %s", path);
+        
+        model_free(model);
+        return NULL;
+    }
+
+    return model;
+}
+
+static model_t* open_model(const struct nv_allocator* alloc, const char* path) {
+    if (file_exists(path)) {
+        log_info("file %s exists; reading", path);
+        return model_read_from_path(alloc, path);
+    } else {
+        log_info("file %s does not exist; creating new model and writing", path);
+        return create_model(alloc, path);
+    }
+}
+
+struct model_context {
+    nv_map_t* datasets;
+
+    model_t* model;
+    const char* model_path;
+};
+
+static void cleanup_context(const struct model_context* ctx) {
+    nv_map_free(ctx->datasets);
+    model_free(ctx->model);
+}
+
 int main(int argc, const char** argv) {
-    nv_map_t* datasets = load_datasets();
-    if (nv_map_size(datasets) < DATASET_COUNT) {
-        nv_map_free(datasets);
+    struct model_context ctx;
+    memset(&ctx, 0, sizeof(struct model_context));
+
+    ctx.datasets = load_datasets();
+    if (nv_map_size(ctx.datasets) < DATASET_COUNT) {
+        cleanup_context(&ctx);
         return 1;
     }
 
-    nv_map_free(datasets);
+    ctx.model_path = "model.bin";
+    ctx.model = open_model(NULL, ctx.model_path);
+
+    cleanup_context(&ctx);
     return 0;
 }
