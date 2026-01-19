@@ -2,27 +2,49 @@
 
 #include <assert.h>
 #include <string.h>
+#include <math.h>
 
 #include <nyoravim/mem.h>
 
 #include <log.h>
 
-matrix_t* mat_alloc(uint32_t rows, uint32_t columns) {
+matrix_t* mat_alloc(const struct nv_allocator* alloc, uint32_t rows, uint32_t columns) {
     size_t meta_size = sizeof(matrix_t);
     size_t data_size = sizeof(float) * rows * columns;
+    size_t block_size = meta_size + data_size;
 
-    matrix_t* mat = nv_alloc(meta_size + data_size);
-    assert(mat);
+    matrix_t* mat;
+    if (alloc) {
+        mat = alloc->alloc(alloc->user, block_size);
+    } else {
+        mat = nv_alloc(block_size);
+    }
+
+    if (!mat) {
+        return NULL;
+    }
 
     mat->rows = rows;
     mat->columns = columns;
     mat->data = (void*)mat + meta_size;
 
-    mat_zero(mat);
     return mat;
 }
 
-void mat_free(matrix_t* mat) { nv_free(mat); }
+void mat_free(const struct nv_allocator* alloc, matrix_t* mat) {
+    if (!alloc) {
+        nv_free(mat);
+    } else if (alloc->free) {
+        alloc->free(alloc->user, mat);
+    }
+}
+
+void mat_copy(matrix_t* dst, const matrix_t* src) {
+    assert(dst->rows == src->rows);
+    assert(dst->columns == src->columns);
+
+    memcpy(dst->data, src->data, sizeof(float) * dst->rows * dst->columns);
+}
 
 void mat_zero(matrix_t* mat) {
     size_t data_size = sizeof(float) * mat->rows * mat->columns;
@@ -60,4 +82,52 @@ void mat_mul(matrix_t* result, const matrix_t* lhs, const matrix_t* rhs, uint32_
             }
         }
     }
+}
+
+void mat_scale(matrix_t* mat, float scalar) {
+    uint32_t total = mat->rows * mat->columns;
+    for (uint32_t i = 0; i < total; i++) {
+        mat->data[i] *= scalar;
+    }
+}
+
+static float relu(float x) { return x > 0 ? x : 0.f; }
+static float sigmoid(float x) { return 1.f / (1.f + expf(-x)); }
+
+void mat_relu(matrix_t* output, const matrix_t* input) {
+    assert(output->rows == input->rows);
+    assert(output->columns == input->columns);
+
+    uint32_t total = output->rows * output->columns;
+    for (uint32_t i = 0; i < total; i++) {
+        float in = input->data[i];
+        output->data[i] = in > 0 ? in : 0.f;
+    }
+}
+
+void mat_sigmoid(matrix_t* output, const matrix_t* input) {
+    assert(output->rows == input->rows);
+    assert(output->columns == input->columns);
+
+    uint32_t total = output->rows * output->columns;
+    for (uint32_t i = 0; i < total; i++) {
+        output->data[i] = sigmoid(input->data[i]);
+    }
+}
+
+void mat_softmax(matrix_t* output, const matrix_t* input) {
+    assert(output->rows == input->rows);
+    assert(output->columns == input->columns);
+
+    uint32_t total = output->rows * output->columns;
+    float sum = 0.f;
+
+    for (uint32_t i = 0; i < total; i++) {
+        float expf_in = expf(input->data[i]);
+        output->data[i] = expf_in;
+
+        sum += expf_in;
+    }
+
+    mat_scale(output, 1.f / sum);
 }

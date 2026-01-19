@@ -18,4 +18,5 @@ target_link_libraries(
 
     libnyoravim
     z # zlib
+    m # math.h
 )
