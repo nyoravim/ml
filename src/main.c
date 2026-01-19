@@ -7,8 +7,10 @@
 #include <stdio.h>
 #include <string.h>
 
+#include <nyoravim/mem.h>
 #include <nyoravim/map.h>
 #include <nyoravim/log.h>
+#include <nyoravim/util.h>
 
 /* for access(2) */
 #include <fcntl.h>
@@ -127,7 +129,7 @@ static model_t* create_model(const struct nv_allocator* alloc, const char* path)
 
     layers[0].op = LAYER_OP_SIGMOID;
     layers[0].size = 128;
-    
+
     layers[1].op = LAYER_OP_SIGMOID;
     layers[1].size = 64;
 
@@ -147,7 +149,7 @@ static model_t* create_model(const struct nv_allocator* alloc, const char* path)
 
     if (!model_write_to_path(model, path)) {
         NV_LOG_ERROR("failed to write model to path %s", path);
-        
+
         model_free(model);
         return NULL;
     }
@@ -165,14 +167,66 @@ static model_t* open_model(const struct nv_allocator* alloc, const char* path) {
     }
 }
 
+enum { MODE_TRAINING, MODE_EVAL };
+
+struct program_params {
+    uint32_t mode;
+    char* model_path;
+};
+
+static bool parse_program_mode(const char* name, uint32_t* mode) {
+    if (strcmp(name, "training") == 0) {
+        NV_LOG_DEBUG("training selected");
+
+        *mode = MODE_TRAINING;
+        return true;
+    }
+
+    if (strcmp(name, "eval") == 0) {
+        NV_LOG_DEBUG("eval selected");
+
+        *mode = MODE_EVAL;
+        return true;
+    }
+
+    NV_LOG_ERROR("invalid mode: %s", name);
+    return false;
+}
+
+enum { EXIT_WITH_SUCCESS, EXIT_WITH_FAILURE, CONTINUE };
+static uint32_t parse_params(int argc, const char** argv, struct program_params* params) {
+    if (argc >= 2 && strcmp(argv[1], "--help") == 0) {
+        printf("usage: %s [training|eval] [model path]\n", argv[0]);
+        return EXIT_WITH_SUCCESS;
+    }
+
+    if (argc < 2) {
+        NV_LOG_DEBUG("no mode passed; assuming training");
+        params->mode = MODE_TRAINING;
+    } else if (!parse_program_mode(argv[1], &params->mode)) {
+        return EXIT_WITH_FAILURE;
+    }
+
+    if (argc >= 3) {
+        params->model_path = nv_strdup(argv[2]);
+        NV_LOG_INFO("using user-specified model path: %s", params->model_path);
+    }
+
+    return CONTINUE;
+}
+
 struct model_context {
     nv_map_t* datasets;
 
     model_t* model;
     const char* model_path;
+
+    struct program_params params;
 };
 
 static void cleanup_context(const struct model_context* ctx) {
+    nv_free(ctx->params.model_path);
+
     nv_map_free(ctx->datasets);
     model_free(ctx->model);
 }
@@ -192,13 +246,25 @@ int main(int argc, const char** argv) {
     struct model_context ctx;
     memset(&ctx, 0, sizeof(struct model_context));
 
+    switch (parse_params(argc, argv, &ctx.params)) {
+    case EXIT_WITH_SUCCESS:
+        cleanup_context(&ctx);
+        return 0;
+    case EXIT_WITH_FAILURE:
+        cleanup_context(&ctx);
+        return 1;
+    default:
+        /* continue */
+        break;
+    }
+
     ctx.datasets = load_datasets();
     if (nv_map_size(ctx.datasets) < DATASET_COUNT) {
         cleanup_context(&ctx);
         return 1;
     }
 
-    ctx.model_path = "model.bin";
+    ctx.model_path = ctx.params.model_path ? ctx.params.model_path : "model.bin";
     ctx.model = open_model(NULL, ctx.model_path);
 
     cleanup_context(&ctx);
