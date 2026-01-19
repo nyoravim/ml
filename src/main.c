@@ -143,7 +143,8 @@ static model_t* create_model(const struct nv_allocator* alloc, const char* path)
         return NULL;
     }
 
-    /* todo: randomize */
+    log_trace("randomizing model");
+    model_randomize(NULL, model);
 
     if (!model_write_to_path(model, path)) {
         log_error("failed to write model to path %s", path);

@@ -16,7 +16,11 @@ void mat_free(const struct nv_allocator* alloc, matrix_t* mat);
 
 void mat_copy(matrix_t* dst, const matrix_t* src);
 
+/* from prng.h */
+struct prng;
+
 void mat_zero(matrix_t* mat);
+void mat_randomize(struct prng* rng, matrix_t* mat);
 
 enum {
     MAT_MUL_TRANSPOSE_LHS = (1 << 0),

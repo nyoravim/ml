@@ -44,6 +44,11 @@ model_t* model_alloc(const struct nv_allocator* alloc, uint32_t input_size, uint
 
 void model_free(model_t* model);
 
+/* from prng.h */
+struct prng;
+
+void model_randomize(struct prng* rng, model_t* model);
+
 void model_forwardprop(const model_t* nn, const matrix_t* input,
                        struct forwardprop_layer_output* output);
 

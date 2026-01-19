@@ -31,6 +31,8 @@ model_t* model_alloc(const struct nv_allocator* alloc, uint32_t input_size, uint
     } else {
         model = nv_alloc(model_size);
         assert(model);
+
+        model->alloc = NULL;
     }
 
     model->num_layers = num_layers;
@@ -44,7 +46,7 @@ model_t* model_alloc(const struct nv_allocator* alloc, uint32_t input_size, uint
         struct model_layer* layer = &model->layers[i];
         layer->op = layers[i].op;
 
-        log_debug("layer %u: %u after %u, op %u", i, current_size, previous_size, layer->op);
+        log_debug("layer %u: %u>%u, op %u", i, previous_size, current_size, layer->op);
 
         layer->biases = mat_alloc(alloc, current_size, 1);
         layer->weights = mat_alloc(alloc, current_size, previous_size);
@@ -73,6 +75,15 @@ void model_free(model_t* model) {
         if (alloc.free) {
             alloc.free(alloc.user, model);
         }
+    }
+}
+
+void model_randomize(struct prng* rng, model_t* model) {
+    for (uint32_t i = 0; i < model->num_layers; i++) {
+        struct model_layer* layer = &model->layers[i];
+
+        mat_randomize(rng, layer->biases);
+        mat_randomize(rng, layer->weights);
     }
 }
 
@@ -215,7 +226,7 @@ model_t* model_read_from_path(const struct nv_allocator* alloc, const char* path
         struct model_layer* layer = &model->layers[i];
         if (!read_layer_from_file(layer, f)) {
             log_error("failed to read layer %u from file!", i);
-            
+
             fclose(f);
             model_free(model);
 
@@ -295,7 +306,7 @@ static bool serialize_model(const model_t* model, FILE* f) {
 }
 
 bool model_write_to_path(const model_t* model, const char* path) {
-    log_debug("writing model to path: %s");
+    log_debug("writing model to path: %s", path);
 
     FILE* f = fopen(path, "wb");
     if (!f) {

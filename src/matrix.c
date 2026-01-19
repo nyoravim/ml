@@ -1,5 +1,7 @@
 #include "matrix.h"
 
+#include "prng.h"
+
 #include <assert.h>
 #include <string.h>
 #include <math.h>
@@ -55,6 +57,14 @@ void mat_copy(matrix_t* dst, const matrix_t* src) {
 void mat_zero(matrix_t* mat) {
     size_t data_size = sizeof(float) * mat->rows * mat->columns;
     memset(mat->data, 0, data_size);
+}
+
+void mat_randomize(struct prng* rng, matrix_t* mat) {
+    uint32_t total = mat->rows * mat->columns;
+    for (uint32_t i = 0; i < total; i++) {
+        uint32_t value = rng ? prng_rand(rng) : prng_rand_g();
+        mat->data[i] = (float)value / (float)UINT32_MAX;
+    }
 }
 
 void mat_mul(matrix_t* result, const matrix_t* lhs, const matrix_t* rhs, uint32_t flags) {
