@@ -10,7 +10,8 @@
 #include <nyoravim/log.h>
 
 matrix_t* mat_alloc(const struct nv_allocator* alloc, uint32_t rows, uint32_t columns) {
-    NV_LOG_TRACE("allocating %ux%u matrix %s an allocator", rows, columns, alloc ? "with" : "without");
+    NV_LOG_TRACE("allocating %ux%u matrix %s an allocator", rows, columns,
+                 alloc ? "with" : "without");
 
     size_t meta_size = sizeof(matrix_t);
     size_t data_size = sizeof(float) * rows * columns;
@@ -108,6 +109,7 @@ void mat_scale(matrix_t* mat, float scalar) {
 
 static float relu(float x) { return x > 0 ? x : 0.f; }
 static float sigmoid(float x) { return 1.f / (1.f + expf(-x)); }
+static float cross_entropy(float x, float y) { return x == 0.f ? 0.f : x * -logf(y); }
 
 void mat_relu(matrix_t* output, const matrix_t* input) {
     assert(output->rows == input->rows);
@@ -145,4 +147,17 @@ void mat_softmax(matrix_t* output, const matrix_t* input) {
     }
 
     mat_scale(output, 1.f / sum);
+}
+
+void mat_cross_entropy(matrix_t* output, const matrix_t* actual, const matrix_t* expected) {
+    assert(output->rows == actual->rows);
+    assert(output->columns == actual->columns);
+
+    assert(actual->rows == expected->rows);
+    assert(actual->columns == expected->columns);
+
+    uint32_t total = output->rows * output->columns;
+    for (uint32_t i = 0; i < total; i++) {
+        output->data[i] = cross_entropy(actual->data[i], expected->data[i]);
+    }
 }

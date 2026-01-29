@@ -35,5 +35,6 @@ void mat_scale(matrix_t* mat, float scalar);
 void mat_relu(matrix_t* output, const matrix_t* input);
 void mat_sigmoid(matrix_t* output, const matrix_t* input);
 void mat_softmax(matrix_t* output, const matrix_t* input);
+void mat_cross_entropy(matrix_t* output, const matrix_t* actual, const matrix_t* expected);
 
 #endif

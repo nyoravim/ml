@@ -49,8 +49,14 @@ struct prng;
 
 void model_randomize(struct prng* rng, model_t* model);
 
-void model_forwardprop(const model_t* nn, const matrix_t* input,
+struct model_layer* model_alloc_deltas(const model_t* model);
+void model_free_deltas(struct model_layer* deltas);
+
+void model_forwardprop(const model_t* model, const matrix_t* input,
                        struct forwardprop_layer_output* output);
+
+void model_backprop(const model_t* model, const matrix_t* input, const matrix_t* expected,
+                    const struct forwardprop_layer_output* fp, struct model_layer* deltas);
 
 model_t* model_read_from_path(const struct nv_allocator* alloc, const char* path);
 bool model_write_to_path(const model_t* model, const char* path);

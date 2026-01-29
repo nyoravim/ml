@@ -1,16 +1,20 @@
 #include "matrix.h"
 #include "model.h"
 
+#include "prng.h"
+
 #include "data/dataset.h"
 
 #include <assert.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include <nyoravim/mem.h>
 #include <nyoravim/map.h>
 #include <nyoravim/log.h>
 #include <nyoravim/util.h>
+#include <nyoravim/list.h>
 
 /* for access(2) */
 #include <fcntl.h>
@@ -172,6 +176,8 @@ enum { MODE_TRAINING, MODE_EVAL };
 struct program_params {
     uint32_t mode;
     char* model_path;
+    uint32_t cluster_size;
+    float training_threshold;
 };
 
 static bool parse_program_mode(const char* name, uint32_t* mode) {
@@ -193,26 +199,36 @@ static bool parse_program_mode(const char* name, uint32_t* mode) {
     return false;
 }
 
-enum { EXIT_WITH_SUCCESS, EXIT_WITH_FAILURE, CONTINUE };
-static uint32_t parse_params(int argc, const char** argv, struct program_params* params) {
+static void print_help(const char* program) {
+    printf("usage: %s [training|eval] [options]\n"
+           "options:\n"
+           "\t-c, --cluster\tcluster size\n"
+           "\t-m, --model\tmodel path\n"
+           "\t-t, --threshold\ttraining threshold\n",
+           program);
+}
+
+static bool parse_params(int argc, const char** argv, struct program_params* params) {
     if (argc >= 2 && strcmp(argv[1], "--help") == 0) {
-        printf("usage: %s [training|eval] [model path]\n", argv[0]);
-        return EXIT_WITH_SUCCESS;
+        print_help(argv[0]);
+        exit(0);
     }
 
+    struct nv_list arguments;
+    nv_list_init(&arguments);
+
+    for (int i = 1; i < argc; i++) {
+        const char* param = argv[i];
+    }
     if (argc < 2) {
         NV_LOG_DEBUG("no mode passed; assuming training");
         params->mode = MODE_TRAINING;
     } else if (!parse_program_mode(argv[1], &params->mode)) {
-        return EXIT_WITH_FAILURE;
+        return false;
     }
 
-    if (argc >= 3) {
-        params->model_path = nv_strdup(argv[2]);
-        NV_LOG_INFO("using user-specified model path: %s", params->model_path);
-    }
-
-    return CONTINUE;
+    nv_list_clear(&arguments, NULL, NULL);
+    return true;
 }
 
 struct model_context {
@@ -231,6 +247,81 @@ static void cleanup_context(const struct model_context* ctx) {
     model_free(ctx->model);
 }
 
+static float train_on_cluster(struct model_context* ctx, const dataset_t* data,
+                              const uint32_t* indices) {
+    struct model_layer* deltas = model_alloc_deltas(ctx->model);
+
+    NV_LOG_INFO("todo: train on cluster");
+
+    model_free_deltas(deltas);
+    return 0.f;
+}
+
+/* generates a random uint32_t in the range [a, b) */
+static uint32_t rand_between(uint32_t a, uint32_t b) {
+    uint32_t r = prng_rand_g();
+    return (r % (b - a)) + a;
+}
+
+static float run_training_phase(struct model_context* ctx, const dataset_t* data) {
+    uint32_t num_images = dataset_get_image_count(data);
+    uint32_t num_labels = dataset_get_label_count(data);
+    uint32_t num_entries = num_images < num_labels ? num_images : num_labels;
+
+    uint32_t num_clusters = num_entries / ctx->params.cluster_size;
+    NV_LOG_DEBUG("beginning training phase %ux%u", num_clusters, ctx->params.cluster_size);
+
+    /* shuffle indices */
+    uint32_t total_entries = num_clusters * ctx->params.cluster_size;
+    uint32_t indices[total_entries];
+
+    for (uint32_t i = 0; i < total_entries; i++) {
+        indices[i] = i;
+    }
+
+    for (uint32_t i = 0; i < total_entries - 1; i++) {
+        uint32_t j = rand_between(i + 1, total_entries);
+
+        uint32_t swap = indices[i];
+        indices[i] = indices[j];
+        indices[j] = swap;
+    }
+
+    float avg = 0.f;
+    for (uint32_t i = 0; i < num_clusters; i++) {
+        NV_LOG_DEBUG("training on cluster %u", i);
+
+        uint32_t offset = i * ctx->params.cluster_size;
+        const uint32_t* cluster_indices = indices + offset;
+
+        float cost = train_on_cluster(ctx, data, cluster_indices);
+        avg += cost / num_clusters;
+    }
+
+    return avg;
+}
+
+static void train_for_threshold(struct model_context* ctx, const dataset_t* data) {
+    while (true) {
+    }
+}
+
+static void run_training(struct model_context* ctx) {
+    NV_LOG_INFO("beginning training cycle");
+
+    while (true) {
+        dataset_t* data;
+        if (nv_map_get(ctx->datasets, (void*)DATASET_TRAINING, (void**)&data)) {
+            run_training_phase(ctx, data);
+        } else {
+            NV_LOG_INFO("no training dataset; exiting out of training cycle");
+            break;
+        }
+
+        /* todo: eval */
+    }
+}
+
 int main(int argc, const char** argv) {
     struct nv_logger_sink stdout_sink;
     nv_create_stdout_sink(&stdout_sink);
@@ -246,16 +337,8 @@ int main(int argc, const char** argv) {
     struct model_context ctx;
     memset(&ctx, 0, sizeof(struct model_context));
 
-    switch (parse_params(argc, argv, &ctx.params)) {
-    case EXIT_WITH_SUCCESS:
+    if (!parse_params(argc, argv, &ctx.params)) {
         cleanup_context(&ctx);
-        return 0;
-    case EXIT_WITH_FAILURE:
-        cleanup_context(&ctx);
-        return 1;
-    default:
-        /* continue */
-        break;
     }
 
     ctx.datasets = load_datasets();
@@ -266,6 +349,12 @@ int main(int argc, const char** argv) {
 
     ctx.model_path = ctx.params.model_path ? ctx.params.model_path : "model.bin";
     ctx.model = open_model(NULL, ctx.model_path);
+
+    switch (ctx.params.mode) {
+    case MODE_TRAINING:
+        run_training(&ctx);
+        break;
+    }
 
     cleanup_context(&ctx);
     return 0;

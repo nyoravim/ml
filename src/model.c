@@ -117,10 +117,23 @@ static void layer_forwardprop(const struct model_layer* layer, const matrix_t* i
 void model_forwardprop(const model_t* model, const matrix_t* input,
                        struct forwardprop_layer_output* output) {
     assert(input);
+    assert(output);
 
     for (uint32_t i = 0; i < model->num_layers; i++) {
         const matrix_t* layer_input = i > 0 ? output[i - 1].activations : input;
         layer_forwardprop(&model->layers[i], layer_input, &output[i]);
+    }
+}
+
+void model_backprop(const model_t* model, const matrix_t* input, const matrix_t* expected,
+                    const struct forwardprop_layer_output* fp, struct model_layer* deltas) {
+    assert(input);
+    assert(fp);
+    assert(deltas);
+
+    for (uint32_t i = 0; i < model->num_layers; i++) {
+        uint32_t layer_index = model->num_layers - (i + 1);
+        const matrix_t* layer_input = i > 0 ? fp[i - 1].activations : input;
     }
 }
 
