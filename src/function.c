@@ -74,6 +74,42 @@ function_t* function_compile_gradient(const function_t* source, uint32_t gradien
     return NULL;
 }
 
+static void function_op_evaluate(const struct function_op* op, const matrix_t* const* params_data,
+                                 matrix_t* output) {
+    NV_LOG_ERROR("todo: implement");
+}
+
 void function_evaluate(const function_t* func, const struct function_context* ctx) {
-    NV_LOG_ERROR("todo implement");
+    uint32_t params_capacity = 0;
+    const matrix_t** params_data = NULL;
+
+    for (uint32_t i = 0; i < func->op_count; i++) {
+        const struct function_op* op = &func->ops[i];
+        if (params_capacity < op->parameter_count) {
+            params_data = nv_realloc(params_data, op->parameter_count * sizeof(const matrix_t*));
+            params_capacity = op->parameter_count;
+        }
+
+        for (uint32_t i = 0; i < op->parameter_count; i++) {
+            const struct function_op_parameter* param = &op->parameters[i];
+            switch (param->source) {
+            case PARAMETER_SOURCE_DATA:
+                params_data[i] = ctx->data[param->index];
+                break;
+            case PARAMETER_SOURCE_WEIGHTS:
+                params_data[i] = ctx->weights[param->index];
+                break;
+            default:
+                params_data[i] = NULL;
+
+                NV_LOG_WARN("invalid parameter source: %u", (uint32_t)param->source);
+                break;
+            }
+        }
+
+        matrix_t* output = ctx->data[op->output_index];
+        function_op_evaluate(op, params_data, output);
+    }
+
+    nv_free(params_data);
 }
