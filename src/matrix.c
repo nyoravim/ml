@@ -107,9 +107,7 @@ void mat_scale(matrix_t* mat, float scalar) {
     }
 }
 
-static float relu(float x) { return x > 0 ? x : 0.f; }
 static float sigmoid(float x) { return 1.f / (1.f + expf(-x)); }
-static float cross_entropy(float x, float y) { return x == 0.f ? 0.f : x * -logf(y); }
 
 void mat_relu(matrix_t* output, const matrix_t* input) {
     assert(output->rows == input->rows);
@@ -158,6 +156,76 @@ void mat_cross_entropy(matrix_t* output, const matrix_t* actual, const matrix_t*
 
     uint32_t total = output->rows * output->columns;
     for (uint32_t i = 0; i < total; i++) {
-        output->data[i] = cross_entropy(actual->data[i], expected->data[i]);
+        float x = expected->data[i];
+        float y = actual->data[i];
+
+        output->data[i] = x == 0.f ? 0.f : x * -logf(y);
+    }
+}
+
+void mat_relu_da_dz(matrix_t* output, const matrix_t* input) {
+    assert(output->rows == input->rows);
+    assert(output->columns == input->columns);
+
+    uint32_t total = output->rows * output->columns;
+    for (uint32_t i = 0; i < total; i++) {
+        float x = input->data[i];
+        output->data[i] = x > 0.f ? 1.f : 0.f;
+    }
+}
+
+void mat_sigmoid_da_dz(matrix_t* output, const matrix_t* input) {
+    assert(output->rows == input->rows);
+    assert(output->columns == input->columns);
+
+    uint32_t total = output->rows * output->columns;
+    for (uint32_t i = 0; i < total; i++) {
+        float x = input->data[i];
+        float sig = sigmoid(x);
+
+        output->data[i] = sig * (1.f - sig);
+    }
+}
+
+void mat_softmax_da_dz(matrix_t* output, const matrix_t* input) {
+    /*
+     * d/dx f(x)/g(x) = (f'(x)g(x) - f(x)g'(x))/(g^2(x))
+     * S(x) = (e^x)/sum
+     * S'(x) = (e^x * sum - e^x * e^x)/(sum ^ 2) = S(x) * (sum - e^x)/sum = S(x) * (1 -
+     * S(x))
+     */
+
+    assert(output->rows == input->rows);
+    assert(output->columns == input->columns);
+
+    uint32_t total = output->rows * output->columns;
+    float sum = 0.f;
+
+    for (uint32_t i = 0; i < total; i++) {
+        float expf_in = expf(input->data[i]);
+        output->data[i] = expf_in;
+
+        sum += expf_in;
+    }
+
+    for (uint32_t i = 0; i < total; i++) {
+        float expf_in = output->data[i];
+        float sm = expf_in / sum;
+
+        output->data[i] = sm * (1.f - sm);
+    }
+}
+
+void mat_cross_entropy_dc_da(matrix_t* output, const matrix_t* actual, const matrix_t* expected) {
+    assert(output->rows == actual->rows);
+    assert(output->columns == actual->columns);
+
+    assert(actual->rows == expected->rows);
+    assert(actual->columns == expected->columns);
+
+    uint32_t total = output->rows * output->columns;
+    for (uint32_t i = 0; i < total; i++) {
+        float y = actual->data[i];
+        output->data[i] = -logf(y);
     }
 }

@@ -133,7 +133,7 @@ void model_backprop(const model_t* model, const matrix_t* input, const matrix_t*
 
     for (uint32_t i = 0; i < model->num_layers; i++) {
         uint32_t layer_index = model->num_layers - (i + 1);
-        const matrix_t* layer_input = i > 0 ? fp[i - 1].activations : input;
+        const matrix_t* layer_input = layer_index > 0 ? fp[layer_index - 1].activations : input;
     }
 }
 

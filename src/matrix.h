@@ -16,10 +16,12 @@ void mat_free(const struct nv_allocator* alloc, matrix_t* mat);
 
 void mat_copy(matrix_t* dst, const matrix_t* src);
 
+void mat_zero(matrix_t* mat);
+
 /* from prng.h */
 struct prng;
 
-void mat_zero(matrix_t* mat);
+/* randomizes mat, using rng if passed */
 void mat_randomize(struct prng* rng, matrix_t* mat);
 
 enum {
@@ -28,7 +30,11 @@ enum {
     MAT_MUL_ZERO_RESULT = (1 << 2),
 };
 
+/* adds dot product of lhs and rhs to result */
 void mat_mul(matrix_t* result, const matrix_t* lhs, const matrix_t* rhs, uint32_t flags);
+
+/* adds rhs to lhs */
+void mat_add(matrix_t* lhs, const matrix_t* rhs);
 
 void mat_scale(matrix_t* mat, float scalar);
 
@@ -36,5 +42,10 @@ void mat_relu(matrix_t* output, const matrix_t* input);
 void mat_sigmoid(matrix_t* output, const matrix_t* input);
 void mat_softmax(matrix_t* output, const matrix_t* input);
 void mat_cross_entropy(matrix_t* output, const matrix_t* actual, const matrix_t* expected);
+
+void mat_relu_da_dz(matrix_t* output, const matrix_t* input);
+void mat_sigmoid_da_dz(matrix_t* output, const matrix_t* input);
+void mat_softmax_da_dz(matrix_t* output, const matrix_t* input);
+void mat_cross_entropy_dc_da(matrix_t* output, const matrix_t* actual, const matrix_t* expected);
 
 #endif
