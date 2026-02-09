@@ -68,8 +68,8 @@ void mat_randomize(struct prng* rng, matrix_t* mat) {
 }
 
 void mat_mul(matrix_t* result, const matrix_t* lhs, const matrix_t* rhs, uint32_t flags) {
-    bool transpose_lhs = flags & MAT_MUL_TRANSPOSE_LHS;
-    bool transpose_rhs = flags & MAT_MUL_TRANSPOSE_RHS;
+    bool transpose_lhs = flags & MAT_TRANSPOSE_LHS;
+    bool transpose_rhs = flags & MAT_TRANSPOSE_RHS;
 
     uint32_t lhs_rows = transpose_lhs ? lhs->columns : lhs->rows;
     uint32_t lhs_columns = transpose_lhs ? lhs->rows : lhs->columns;
@@ -81,7 +81,7 @@ void mat_mul(matrix_t* result, const matrix_t* lhs, const matrix_t* rhs, uint32_
     assert(result->rows == lhs_rows);
     assert(result->columns == rhs_columns);
 
-    if (flags & MAT_MUL_ZERO_RESULT) {
+    if (flags & MAT_ZERO_RESULT) {
         mat_zero(result);
     }
 
@@ -91,11 +91,31 @@ void mat_mul(matrix_t* result, const matrix_t* lhs, const matrix_t* rhs, uint32_
 
             /* can also be rhs_rows */
             for (uint32_t x = 0; x < lhs_columns; x++) {
-                uint32_t lhs_index = transpose_lhs ? x * lhs_rows + m : m * lhs_rows * x;
-                uint32_t rhs_index = transpose_rhs ? n * rhs_rows + x : x * rhs_rows + n;
+                uint32_t lhs_index = transpose_lhs ? x * lhs_columns + m : m * lhs_columns * x;
+                uint32_t rhs_index = transpose_rhs ? n * rhs_columns + x : x * rhs_columns + n;
 
                 result->data[result_index] += lhs->data[lhs_index] * rhs->data[rhs_index];
             }
+        }
+    }
+}
+
+void mat_add(matrix_t* lhs, const matrix_t* rhs, uint32_t flags) {
+    assert(!(flags & ~(uint32_t)MAT_TRANSPOSE_RHS));
+    bool transpose_rhs = flags & MAT_TRANSPOSE_RHS;
+
+    uint32_t rhs_rows = transpose_rhs ? rhs->columns : rhs->rows;
+    uint32_t rhs_columns = transpose_rhs ? rhs->rows : rhs->columns;
+
+    assert(lhs->rows == rhs_rows);
+    assert(lhs->columns == rhs_columns);
+
+    for (uint32_t m = 0; m < lhs->rows; m++) {
+        for (uint32_t n = 0; n < lhs->columns; n++) {
+            uint32_t lhs_index = m * lhs->columns + n;
+            uint32_t rhs_index = transpose_rhs ? n * lhs->columns + m : m * lhs->columns + n;
+
+            lhs->data[lhs_index] += rhs->data[rhs_index];
         }
     }
 }

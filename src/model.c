@@ -86,6 +86,15 @@ void model_randomize(struct prng* rng, model_t* model) {
     }
 }
 
+struct model_layer* model_alloc_deltas(const model_t* model) {
+    /* todo: alloc */
+    return NULL;
+}
+
+void model_free_deltas(struct model_layer* deltas) {
+    /* todo: free */
+}
+
 static void layer_forwardprop(const struct model_layer* layer, const matrix_t* input,
                               struct forwardprop_layer_output* output) {
     /* z_1 = w_1 * a_0 + b_1 */

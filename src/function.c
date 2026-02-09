@@ -93,7 +93,7 @@ static void function_op_evaluate(const struct function_op* op, const matrix_t* c
     case FUNCTION_OP_ADD:
         assert(op->parameter_count == 1);
 
-        mat_add(output, params_data[0]);
+        mat_add(output, params_data[0], op->flags);
         break;
     case FUNCTION_OP_DOT:
         assert(op->parameter_count == 2);
