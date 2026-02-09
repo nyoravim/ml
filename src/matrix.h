@@ -9,10 +9,8 @@ typedef struct matrix {
     float* data;
 } matrix_t;
 
-struct nv_allocator;
-
-matrix_t* mat_alloc(const struct nv_allocator* alloc, uint32_t rows, uint32_t columns);
-void mat_free(const struct nv_allocator* alloc, matrix_t* mat);
+matrix_t* mat_alloc(uint32_t rows, uint32_t columns);
+void mat_free(matrix_t* mat);
 
 void mat_copy(matrix_t* dst, const matrix_t* src);
 

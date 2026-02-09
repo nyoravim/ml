@@ -9,7 +9,7 @@
 #include <nyoravim/mem.h>
 #include <nyoravim/log.h>
 
-model_t* model_alloc(const struct nv_allocator* alloc, uint32_t input_size, uint32_t num_layers,
+model_t* model_alloc(uint32_t input_size, uint32_t num_layers,
                      const struct model_layer_spec* layers) {
     if (num_layers < 1) {
         NV_LOG_ERROR("each network must have at least 1 layer!");
@@ -19,20 +19,8 @@ model_t* model_alloc(const struct nv_allocator* alloc, uint32_t input_size, uint
     NV_LOG_TRACE("allocating model with %u layers", num_layers);
     size_t model_size = sizeof(model_t) + num_layers * sizeof(struct model_layer);
 
-    model_t* model;
-    if (alloc) {
-        /* allocate model + allocator at end */
-        model = alloc->alloc(alloc->user, model_size + sizeof(struct nv_allocator));
-        assert(model);
-
-        model->alloc = (void*)model + model_size;
-        memcpy(model->alloc, alloc, sizeof(struct nv_allocator));
-    } else {
-        model = nv_alloc(model_size);
-        assert(model);
-
-        model->alloc = NULL;
-    }
+    model_t* model = nv_alloc(model_size);
+    assert(model);
 
     model->num_layers = num_layers;
     model->layers = (void*)model + sizeof(model_t);
@@ -47,8 +35,8 @@ model_t* model_alloc(const struct nv_allocator* alloc, uint32_t input_size, uint
 
         NV_LOG_DEBUG("layer %u: %u>%u, op %u", i, previous_size, current_size, layer->op);
 
-        layer->biases = mat_alloc(alloc, current_size, 1);
-        layer->weights = mat_alloc(alloc, current_size, previous_size);
+        layer->biases = mat_alloc(current_size, 1);
+        layer->weights = mat_alloc(current_size, previous_size);
     }
 
     return model;
@@ -61,20 +49,12 @@ void model_free(model_t* model) {
 
     for (uint32_t i = 0; i < model->num_layers; i++) {
         const struct model_layer* layer = &model->layers[i];
-        mat_free(model->alloc, layer->biases);
-        mat_free(model->alloc, layer->weights);
+
+        mat_free(layer->biases);
+        mat_free(layer->weights);
     }
 
-    if (!model->alloc) {
-        nv_free(model);
-    } else {
-        struct nv_allocator alloc;
-        memcpy(&alloc, model->alloc, sizeof(struct nv_allocator));
-
-        if (alloc.free) {
-            alloc.free(alloc.user, model);
-        }
-    }
+    nv_free(model);
 }
 
 void model_randomize(struct prng* rng, model_t* model) {
@@ -109,7 +89,7 @@ struct initial_header {
     uint32_t input_size;
 };
 
-static model_t* create_model_from_header(const struct nv_allocator* alloc, FILE* f) {
+static model_t* create_model_from_header(FILE* f) {
     struct initial_header initial_header;
     if (!read_chunk_from_file(f, &initial_header, sizeof(struct initial_header))) {
         NV_LOG_ERROR("failed to read initial header from model file!");
@@ -132,7 +112,7 @@ static model_t* create_model_from_header(const struct nv_allocator* alloc, FILE*
     }
 
     model_t* model =
-        model_alloc(alloc, initial_header.input_size, initial_header.layer_count, layer_specs);
+        model_alloc(initial_header.input_size, initial_header.layer_count, layer_specs);
 
     nv_free(layer_specs);
     if (!model) {
@@ -164,7 +144,7 @@ static bool read_layer_from_file(struct model_layer* layer, FILE* f) {
     return true;
 }
 
-model_t* model_read_from_path(const struct nv_allocator* alloc, const char* path) {
+model_t* model_read_from_path(const char* path) {
     NV_LOG_DEBUG("reading model from path: %s", path);
 
     FILE* f = fopen(path, "rb");
@@ -173,7 +153,7 @@ model_t* model_read_from_path(const struct nv_allocator* alloc, const char* path
         return NULL;
     }
 
-    model_t* model = create_model_from_header(alloc, f);
+    model_t* model = create_model_from_header(f);
     if (!model) {
         NV_LOG_ERROR("failed to allocate model from file header!");
 

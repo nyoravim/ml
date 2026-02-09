@@ -25,15 +25,6 @@ struct model_layer {
     matrix_t* biases;
 };
 
-struct nv_allocator;
-
-typedef struct model {
-    uint32_t num_layers;
-    struct model_layer* layers;
-
-    struct nv_allocator* alloc;
-} model_t;
-
 /* from function.h */
 typedef struct function function_t;
 
@@ -44,7 +35,14 @@ struct compiled_model {
     uint32_t gradient_offset;
 };
 
-model_t* model_alloc(const struct nv_allocator* alloc, uint32_t input_size, uint32_t num_layers,
+typedef struct model {
+    uint32_t num_layers;
+    struct model_layer* layers;
+
+    struct compiled_model compiled;
+} model_t;
+
+model_t* model_alloc(uint32_t input_size, uint32_t num_layers,
                      const struct model_layer_spec* layers);
 
 void model_free(model_t* model);
@@ -54,9 +52,7 @@ struct prng;
 
 void model_randomize(struct prng* rng, model_t* model);
 
-void model_compile(const model_t* model, struct compiled_model* compiled);
-
-model_t* model_read_from_path(const struct nv_allocator* alloc, const char* path);
+model_t* model_read_from_path(const char* path);
 bool model_write_to_path(const model_t* model, const char* path);
 
 #endif

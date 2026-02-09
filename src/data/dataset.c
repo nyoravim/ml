@@ -95,7 +95,7 @@ dataset_t* dataset_load(const char* label_path, const char* image_path) {
 
     if (dataset->images.num != dataset->labels.num) {
         NV_LOG_WARN("images & labels do not match in number! (%u vs %u)", dataset->images.num,
-                 dataset->labels.num);
+                    dataset->labels.num);
     }
 
     return dataset;
@@ -115,15 +115,14 @@ void dataset_free(dataset_t* data) {
 uint32_t dataset_get_image_count(const dataset_t* data) { return data->images.num; }
 uint32_t dataset_get_label_count(const dataset_t* data) { return data->labels.num; }
 
-uint32_t dataset_get_entry(const dataset_t* data, uint32_t index, const struct nv_allocator* alloc,
-                           struct dataset_entry* entry) {
+uint32_t dataset_get_entry(const dataset_t* data, uint32_t index, struct dataset_entry* entry) {
     uint32_t flags = 0;
 
     if (index < data->images.num) {
         uint32_t offsets[] = { index, 0, 0 };
         const uint8_t* image = mnist_get_data(data->images.data, offsets);
 
-        entry->image = mat_alloc(alloc, data->images.height, data->images.width);
+        entry->image = mat_alloc(data->images.height, data->images.width);
         assert(entry->image);
 
         uint32_t total = data->images.width * data->images.height;

@@ -122,7 +122,7 @@ static bool file_exists(const char* path) {
     return ret == 0 || errno != ENOENT;
 }
 
-static model_t* create_model(const struct nv_allocator* alloc, const char* path) {
+static model_t* create_model(const char* path) {
     if (!is_file_writable(path)) {
         NV_LOG_ERROR("cannot write to path %s; aborting", path);
         return NULL;
@@ -142,7 +142,7 @@ static model_t* create_model(const struct nv_allocator* alloc, const char* path)
 
     NV_LOG_DEBUG("manually allocating model with %u layers", layer_count);
 
-    model_t* model = model_alloc(alloc, 28 * 28, layer_count, layers);
+    model_t* model = model_alloc(28 * 28, layer_count, layers);
     if (!model) {
         NV_LOG_ERROR("failed to manually allocate model!");
         return NULL;
@@ -161,13 +161,13 @@ static model_t* create_model(const struct nv_allocator* alloc, const char* path)
     return model;
 }
 
-static model_t* open_model(const struct nv_allocator* alloc, const char* path) {
+static model_t* open_model(const char* path) {
     if (file_exists(path)) {
         NV_LOG_INFO("file %s exists; reading", path);
-        return model_read_from_path(alloc, path);
+        return model_read_from_path(path);
     } else {
         NV_LOG_INFO("file %s does not exist; creating new model and writing", path);
-        return create_model(alloc, path);
+        return create_model(path);
     }
 }
 
@@ -249,11 +249,8 @@ static void cleanup_context(const struct model_context* ctx) {
 
 static float train_on_cluster(struct model_context* ctx, const dataset_t* data,
                               const uint32_t* indices) {
-    struct model_layer* deltas = model_alloc_deltas(ctx->model);
-
     NV_LOG_INFO("todo: train on cluster");
 
-    model_free_deltas(deltas);
     return 0.f;
 }
 
@@ -348,7 +345,7 @@ int main(int argc, const char** argv) {
     }
 
     ctx.model_path = ctx.params.model_path ? ctx.params.model_path : "model.bin";
-    ctx.model = open_model(NULL, ctx.model_path);
+    ctx.model = open_model(ctx.model_path);
 
     switch (ctx.params.mode) {
     case MODE_TRAINING:

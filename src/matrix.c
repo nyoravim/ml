@@ -9,21 +9,14 @@
 #include <nyoravim/mem.h>
 #include <nyoravim/log.h>
 
-matrix_t* mat_alloc(const struct nv_allocator* alloc, uint32_t rows, uint32_t columns) {
-    NV_LOG_TRACE("allocating %ux%u matrix %s an allocator", rows, columns,
-                 alloc ? "with" : "without");
+matrix_t* mat_alloc(uint32_t rows, uint32_t columns) {
+    NV_LOG_TRACE("allocating %ux%u matrix", rows, columns);
 
     size_t meta_size = sizeof(matrix_t);
     size_t data_size = sizeof(float) * rows * columns;
     size_t block_size = meta_size + data_size;
 
-    matrix_t* mat;
-    if (alloc) {
-        mat = alloc->alloc(alloc->user, block_size);
-    } else {
-        mat = nv_alloc(block_size);
-    }
-
+    matrix_t* mat = nv_alloc(block_size);
     if (!mat) {
         return NULL;
     }
@@ -35,17 +28,7 @@ matrix_t* mat_alloc(const struct nv_allocator* alloc, uint32_t rows, uint32_t co
     return mat;
 }
 
-void mat_free(const struct nv_allocator* alloc, matrix_t* mat) {
-    if (!mat) {
-        return;
-    }
-
-    if (!alloc) {
-        nv_free(mat);
-    } else if (alloc->free) {
-        alloc->free(alloc->user, mat);
-    }
-}
+void mat_free(matrix_t* mat) { nv_free(mat); }
 
 void mat_copy(matrix_t* dst, const matrix_t* src) {
     assert(dst->rows == src->rows);
@@ -236,7 +219,8 @@ void mat_softmax_gradient(matrix_t* output, const matrix_t* input) {
     }
 }
 
-void mat_cross_entropy_gradient(matrix_t* output, const matrix_t* actual, const matrix_t* expected) {
+void mat_cross_entropy_gradient(matrix_t* output, const matrix_t* actual,
+                                const matrix_t* expected) {
     assert(output->rows == actual->rows);
     assert(output->columns == actual->columns);
 
