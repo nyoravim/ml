@@ -19,9 +19,6 @@ struct model_layer_spec {
     uint32_t size;
 };
 
-/* from function.h */
-typedef struct function function_t;
-
 typedef struct model model_t;
 
 model_t* model_alloc(uint32_t input_size, uint32_t num_layers,
