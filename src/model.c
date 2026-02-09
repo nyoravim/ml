@@ -86,66 +86,6 @@ void model_randomize(struct prng* rng, model_t* model) {
     }
 }
 
-struct model_layer* model_alloc_deltas(const model_t* model) {
-    /* todo: alloc */
-    return NULL;
-}
-
-void model_free_deltas(struct model_layer* deltas) {
-    /* todo: free */
-}
-
-static void layer_forwardprop(const struct model_layer* layer, const matrix_t* input,
-                              struct forwardprop_layer_output* output) {
-    /* z_1 = w_1 * a_0 + b_1 */
-    mat_copy(output->z, layer->biases);
-    mat_mul(output->z, layer->weights, input, 0);
-
-    /* a = A(z) */
-    switch (layer->op) {
-    case LAYER_OP_RELU:
-        mat_relu(output->activations, output->z);
-        break;
-    case LAYER_OP_SIGMOID:
-        mat_relu(output->activations, output->z);
-        break;
-    case LAYER_OP_SOFTMAX:
-        mat_softmax(output->activations, output->z);
-        break;
-    default:
-        if (layer->op != LAYER_OP_NONE) {
-            NV_LOG_WARN("unknown layer op %u; assuming LAYER_OP_NONE", layer->op);
-        }
-
-        /* copy as is */
-        mat_copy(output->activations, output->z);
-        break;
-    }
-}
-
-void model_forwardprop(const model_t* model, const matrix_t* input,
-                       struct forwardprop_layer_output* output) {
-    assert(input);
-    assert(output);
-
-    for (uint32_t i = 0; i < model->num_layers; i++) {
-        const matrix_t* layer_input = i > 0 ? output[i - 1].activations : input;
-        layer_forwardprop(&model->layers[i], layer_input, &output[i]);
-    }
-}
-
-void model_backprop(const model_t* model, const matrix_t* input, const matrix_t* expected,
-                    const struct forwardprop_layer_output* fp, struct model_layer* deltas) {
-    assert(input);
-    assert(fp);
-    assert(deltas);
-
-    for (uint32_t i = 0; i < model->num_layers; i++) {
-        uint32_t layer_index = model->num_layers - (i + 1);
-        const matrix_t* layer_input = layer_index > 0 ? fp[layer_index - 1].activations : input;
-    }
-}
-
 static bool read_chunk_from_file(FILE* f, void* buffer, size_t size) {
     while (size > 0) {
         size_t bytes_read = fread(buffer, 1, size, f);

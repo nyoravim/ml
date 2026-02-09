@@ -34,9 +34,14 @@ typedef struct model {
     struct nv_allocator* alloc;
 } model_t;
 
-struct forwardprop_layer_output {
-    matrix_t* z;
-    matrix_t* activations;
+/* from function.h */
+typedef struct function function_t;
+
+struct compiled_model {
+    function_t* forwardprop;
+
+    function_t* backprop;
+    uint32_t gradient_offset;
 };
 
 model_t* model_alloc(const struct nv_allocator* alloc, uint32_t input_size, uint32_t num_layers,
@@ -49,14 +54,7 @@ struct prng;
 
 void model_randomize(struct prng* rng, model_t* model);
 
-struct model_layer* model_alloc_deltas(const model_t* model);
-void model_free_deltas(struct model_layer* deltas);
-
-void model_forwardprop(const model_t* model, const matrix_t* input,
-                       struct forwardprop_layer_output* output);
-
-void model_backprop(const model_t* model, const matrix_t* input, const matrix_t* expected,
-                    const struct forwardprop_layer_output* fp, struct model_layer* deltas);
+void model_compile(const model_t* model, struct compiled_model* compiled);
 
 model_t* model_read_from_path(const struct nv_allocator* alloc, const char* path);
 bool model_write_to_path(const model_t* model, const char* path);

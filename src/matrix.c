@@ -183,7 +183,7 @@ void mat_cross_entropy(matrix_t* output, const matrix_t* actual, const matrix_t*
     }
 }
 
-void mat_relu_da_dz(matrix_t* output, const matrix_t* input) {
+void mat_relu_gradient(matrix_t* output, const matrix_t* input) {
     assert(output->rows == input->rows);
     assert(output->columns == input->columns);
 
@@ -194,7 +194,7 @@ void mat_relu_da_dz(matrix_t* output, const matrix_t* input) {
     }
 }
 
-void mat_sigmoid_da_dz(matrix_t* output, const matrix_t* input) {
+void mat_sigmoid_gradient(matrix_t* output, const matrix_t* input) {
     assert(output->rows == input->rows);
     assert(output->columns == input->columns);
 
@@ -207,7 +207,7 @@ void mat_sigmoid_da_dz(matrix_t* output, const matrix_t* input) {
     }
 }
 
-void mat_softmax_da_dz(matrix_t* output, const matrix_t* input) {
+void mat_softmax_gradient(matrix_t* output, const matrix_t* input) {
     /*
      * d/dx f(x)/g(x) = (f'(x)g(x) - f(x)g'(x))/(g^2(x))
      * S(x) = (e^x)/sum
@@ -236,7 +236,7 @@ void mat_softmax_da_dz(matrix_t* output, const matrix_t* input) {
     }
 }
 
-void mat_cross_entropy_dc_da(matrix_t* output, const matrix_t* actual, const matrix_t* expected) {
+void mat_cross_entropy_gradient(matrix_t* output, const matrix_t* actual, const matrix_t* expected) {
     assert(output->rows == actual->rows);
     assert(output->columns == actual->columns);
 

@@ -11,12 +11,19 @@ typedef enum {
     FUNCTION_OP_NOOP = 0,
     FUNCTION_OP_ZERO = 1,
     FUNCTION_OP_COPY = 2,
+
     FUNCTION_OP_ADD = 3,
     FUNCTION_OP_DOT = 4,
+
     FUNCTION_OP_RELU = 5,
     FUNCTION_OP_SIGMOID = 6,
     FUNCTION_OP_SOFTMAX = 7,
     FUNCTION_OP_CROSS_ENTROPY = 8,
+
+    FUNCTION_OP_RELU_GRADIENT = 9,
+    FUNCTION_OP_SIGMOID_GRADIENT = 10,
+    FUNCTION_OP_SOFTMAX_GRADIENT = 11,
+    FUNCTION_OP_CROSS_ENTROPY_GRADIENT = 12,
 } function_op_id;
 
 typedef enum {
@@ -43,8 +50,6 @@ typedef struct function function_t;
 
 function_t* function_compile(const struct nv_list* operations);
 void function_free(function_t* func);
-
-function_t* function_compile_gradient(const function_t* source, uint32_t gradient_offset);
 
 struct function_context {
     matrix_t* const* data;

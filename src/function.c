@@ -69,11 +69,6 @@ function_t* function_compile(const struct nv_list* operations) {
 /* see function_t definition above */
 void function_free(function_t* func) { nv_free(func); }
 
-function_t* function_compile_gradient(const function_t* source, uint32_t gradient_offset) {
-    NV_LOG_ERROR("i dont want to think about implementing this");
-    return NULL;
-}
-
 static void function_op_evaluate(const struct function_op* op, const matrix_t* const* params_data,
                                  matrix_t* output) {
     switch (op->id) {
@@ -129,6 +124,30 @@ static void function_op_evaluate(const struct function_op* op, const matrix_t* c
         assert(op->parameter_count == 2);
 
         mat_cross_entropy(output, params_data[0], params_data[1]);
+        break;
+    case FUNCTION_OP_RELU_GRADIENT:
+        NV_LOG_TRACE("relu gradient");
+        assert(op->parameter_count == 1);
+
+        mat_relu_gradient(output, params_data[0]);
+        break;
+    case FUNCTION_OP_SIGMOID_GRADIENT:
+        NV_LOG_TRACE("sigmoid gradient");
+        assert(op->parameter_count == 1);
+        
+        mat_sigmoid_gradient(output, params_data[0]);
+        break;
+    case FUNCTION_OP_SOFTMAX_GRADIENT:
+        NV_LOG_TRACE("softmax gradient");
+        assert(op->parameter_count == 1);
+
+        mat_softmax_gradient(output, params_data[0]);
+        break;
+    case FUNCTION_OP_CROSS_ENTROPY_GRADIENT:
+        NV_LOG_TRACE("cross entropy gradient");
+        assert(op->parameter_count == 2);
+
+        mat_cross_entropy_gradient(output, params_data[0], params_data[1]);
         break;
     default:
         NV_LOG_ERROR("invalid op id: %u", (uint32_t)op->id);
