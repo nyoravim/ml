@@ -76,10 +76,59 @@ function_t* function_compile_gradient(const function_t* source, uint32_t gradien
 
 static void function_op_evaluate(const struct function_op* op, const matrix_t* const* params_data,
                                  matrix_t* output) {
-    NV_LOG_ERROR("todo: implement");
+    switch (op->id) {
+    case FUNCTION_OP_NOOP:
+        NV_LOG_TRACE("noop");
+        break;
+    case FUNCTION_OP_ZERO:
+        assert(op->parameter_count == 0);
+
+        mat_zero(output);
+        break;
+    case FUNCTION_OP_COPY:
+        assert(op->parameter_count == 1);
+
+        mat_copy(output, params_data[0]);
+        break;
+    case FUNCTION_OP_ADD:
+        assert(op->parameter_count == 1);
+
+        mat_add(output, params_data[0]);
+        break;
+    case FUNCTION_OP_DOT:
+        assert(op->parameter_count == 2);
+
+        mat_mul(output, params_data[0], params_data[1], op->flags);
+        break;
+    case FUNCTION_OP_RELU:
+        assert(op->parameter_count == 1);
+
+        mat_relu(output, params_data[0]);
+        break;
+    case FUNCTION_OP_SIGMOID:
+        assert(op->parameter_count == 1);
+
+        mat_relu(output, params_data[0]);
+        break;
+    case FUNCTION_OP_SOFTMAX:
+        assert(op->parameter_count == 1);
+
+        mat_softmax(output, params_data[0]);
+        break;
+    case FUNCTION_OP_CROSS_ENTROPY:
+        assert(op->parameter_count == 2);
+
+        mat_cross_entropy(output, params_data[0], params_data[1]);
+        break;
+    default:
+        NV_LOG_ERROR("invalid op id: %u", (uint32_t)op->id);
+        break;
+    }
 }
 
 void function_evaluate(const function_t* func, const struct function_context* ctx) {
+    NV_LOG_TRACE("function eval");
+
     uint32_t params_capacity = 0;
     const matrix_t** params_data = NULL;
 
