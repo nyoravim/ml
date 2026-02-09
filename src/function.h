@@ -3,8 +3,6 @@
 
 #include <stdint.h>
 
-#include <nyoravim/list.h>
-
 #include "matrix.h"
 
 typedef enum {
@@ -48,7 +46,7 @@ struct function_op {
 
 typedef struct function function_t;
 
-function_t* function_compile(const struct nv_list* operations);
+function_t* function_compile(uint32_t operation_count, const struct function_op* operations);
 void function_free(function_t* func);
 
 struct function_context {

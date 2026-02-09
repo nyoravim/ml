@@ -229,7 +229,12 @@ void mat_cross_entropy_gradient(matrix_t* output, const matrix_t* actual,
 
     uint32_t total = output->rows * output->columns;
     for (uint32_t i = 0; i < total; i++) {
+        /* cross entropy is -xlny
+         * d/dy = -x/y */
+
+        float x = expected->data[i];
         float y = actual->data[i];
-        output->data[i] = -logf(y);
+
+        output->data[i] = -x / y;
     }
 }

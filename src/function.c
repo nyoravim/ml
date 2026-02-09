@@ -13,27 +13,21 @@ typedef struct function {
     const struct function_op* ops;
 } function_t;
 
-function_t* function_compile(const struct nv_list* operations) {
+function_t* function_compile(uint32_t operation_count, const struct function_op* operations) {
     NV_LOG_TRACE("compiling function");
 
-    uint32_t op_count = 0;
-    uint32_t parameter_count = 0;
-
-    if (operations) {
-        for (struct nv_list_node* node = operations->head; node != NULL; node = node->next) {
-            op_count++;
-
-            const struct function_op* op = node->value;
-            parameter_count += op->parameter_count;
-        }
-    }
-
-    if (op_count == 0) {
+    if (operation_count == 0) {
         NV_LOG_ERROR("no operations passed to function_compile");
         return NULL;
     }
 
-    size_t function_size = sizeof(function_t) + op_count * sizeof(struct function_op) +
+    uint32_t parameter_count = 0;
+    for (uint32_t i = 0; i < operation_count; i++) {
+        const struct function_op* op = &operations[i];
+        parameter_count += op->parameter_count;
+    }
+
+    size_t function_size = sizeof(function_t) + operation_count * sizeof(struct function_op) +
                            parameter_count * sizeof(struct function_op_parameter);
 
     /* basically just arranging memory in a way that is convenient to access at runtime */
@@ -41,17 +35,16 @@ function_t* function_compile(const struct nv_list* operations) {
     assert(func);
 
     struct function_op* ops = (void*)func + sizeof(function_t);
-    struct function_op_parameter* parameters = (void*)ops + op_count * sizeof(struct function_op);
+    struct function_op_parameter* parameters =
+        (void*)ops + operation_count * sizeof(struct function_op);
 
-    func->op_count = op_count;
+    func->op_count = operation_count;
     func->ops = ops;
 
-    uint32_t op_index = 0;
     uint32_t parameter_index = 0;
-
-    for (struct nv_list_node* node = operations->head; node != NULL; node = node->next) {
-        const struct function_op* src_op = node->value;
-        struct function_op* dst_op = &ops[op_index++];
+    for (uint32_t i = 0; i < operation_count; i++) {
+        const struct function_op* src_op = &operations[i];
+        struct function_op* dst_op = &ops[i];
 
         struct function_op_parameter* dst_params = parameters + parameter_index;
         parameter_index += src_op->parameter_count;
@@ -134,7 +127,7 @@ static void function_op_evaluate(const struct function_op* op, const matrix_t* c
     case FUNCTION_OP_SIGMOID_GRADIENT:
         NV_LOG_TRACE("sigmoid gradient");
         assert(op->parameter_count == 1);
-        
+
         mat_sigmoid_gradient(output, params_data[0]);
         break;
     case FUNCTION_OP_SOFTMAX_GRADIENT:

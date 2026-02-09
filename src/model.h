@@ -7,40 +7,22 @@
 /* from matrix.h */
 typedef struct matrix matrix_t;
 
-enum {
+typedef enum {
     LAYER_OP_NONE = 0,
     LAYER_OP_RELU = 1,
     LAYER_OP_SIGMOID = 2,
     LAYER_OP_SOFTMAX = 3,
-};
+} layer_op;
 
 struct model_layer_spec {
-    uint32_t op;
+    layer_op op;
     uint32_t size;
-};
-
-struct model_layer {
-    uint32_t op;
-    matrix_t* weights;
-    matrix_t* biases;
 };
 
 /* from function.h */
 typedef struct function function_t;
 
-struct compiled_model {
-    function_t* forwardprop;
-
-    function_t* backprop;
-    uint32_t gradient_offset;
-};
-
-typedef struct model {
-    uint32_t num_layers;
-    struct model_layer* layers;
-
-    struct compiled_model compiled;
-} model_t;
+typedef struct model model_t;
 
 model_t* model_alloc(uint32_t input_size, uint32_t num_layers,
                      const struct model_layer_spec* layers);

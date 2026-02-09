@@ -1,6 +1,7 @@
 #include "model.h"
 
 #include "matrix.h"
+#include "function.h"
 
 #include <assert.h>
 #include <string.h>
@@ -8,6 +9,192 @@
 
 #include <nyoravim/mem.h>
 #include <nyoravim/log.h>
+#include <nyoravim/arena.h>
+
+struct model_layer {
+    layer_op op;
+    matrix_t* weights;
+    matrix_t* biases;
+};
+
+struct compiled_model {
+    function_t* forwardprop;
+    uint32_t input_index, output_index, cost_index;
+
+    function_t* backprop;
+    uint32_t gradient_offset;
+};
+
+typedef struct model {
+    uint32_t num_layers;
+    struct model_layer* layers;
+
+    struct compiled_model compiled;
+} model_t;
+
+struct op_array {
+    nv_arena_t* arena;
+
+    uint32_t capacity, count;
+    struct function_op* ops;
+};
+
+static void op_array_append(struct op_array* ops, const struct function_op* op) {
+    uint32_t index = ops->count++;
+    if (ops->count > ops->capacity) {
+        if (ops->capacity > 0) {
+            ops->capacity *= 2;
+        } else {
+            /* arbitrary starting capacity */
+            ops->capacity = 16;
+        }
+
+        ops->ops =
+            nv_arena_realloc(ops->arena, ops->ops, ops->capacity * sizeof(struct function_op));
+    }
+
+    struct function_op* dst = &ops->ops[index];
+    memcpy(dst, op, sizeof(struct function_op));
+
+    size_t params_size = op->parameter_count * sizeof(struct function_op_parameter);
+    struct function_op_parameter* params = nv_arena_alloc(ops->arena, params_size);
+
+    memcpy(params, op->parameters, params_size);
+    dst->parameters = params;
+}
+
+static void get_layer_matrix_indices(uint32_t offset, uint32_t layer, uint32_t* weights,
+                                     uint32_t* biases) {
+    uint32_t layer_offset = offset + layer * 2; /* weights & biases */
+
+    if (weights) {
+        *weights = layer_offset + 0; /* weights are first */
+    }
+
+    if (biases) {
+        *biases = layer_offset + 1; /* biases are second */
+    }
+}
+
+static void get_layer_data_indices(uint32_t offset, uint32_t layer, uint32_t* z, uint32_t* a) {
+    uint32_t layer_offset = offset + layer * 2; /* z & a */
+
+    if (z) {
+        *z = layer_offset + 0; /* z is first */
+    }
+
+    if (a) {
+        *a = layer_offset + 1; /* a is second */
+    }
+}
+
+struct compilation_context {
+    uint32_t working_offset;
+};
+
+static void compile_layer_forwardprop(struct compilation_context* ctx, struct op_array* ops,
+                                      layer_op activation_function, uint32_t layer_index) {
+    uint32_t z_1, a_1;
+    get_layer_data_indices(ctx->working_offset, layer_index, &z_1, &a_1);
+
+    /* last data matrix written to is layer input */
+    assert(z_1 > 0);
+    uint32_t a_0 = z_1 - 1;
+
+    uint32_t w_1, b_1;
+    get_layer_matrix_indices(0, layer_index, &w_1, &b_1);
+
+    struct function_op_parameter params[2];
+    memset(params, 0, sizeof(params));
+
+    struct function_op op;
+    memset(&op, 0, sizeof(struct function_op));
+    op.parameters = params;
+
+    /* copy from layer bias to z */
+    params[0].source = PARAMETER_SOURCE_WEIGHTS;
+    params[0].index = b_1;
+
+    op.id = FUNCTION_OP_COPY;
+    op.parameter_count = 1;
+    op.output_index = z_1;
+
+    /* copies all */
+    op_array_append(ops, &op);
+
+    /* dot from weights and previous activations and add to z */
+    params[0].source = PARAMETER_SOURCE_WEIGHTS;
+    params[0].index = w_1;
+    params[1].source = PARAMETER_SOURCE_DATA;
+    params[1].index = a_0;
+
+    op.id = FUNCTION_OP_DOT;
+    op.parameter_count = 2;
+    op.output_index = z_1;
+
+    op_array_append(ops, &op);
+
+    /* finally, activation function */
+    params[0].source = PARAMETER_SOURCE_DATA;
+    params[0].index = z_1;
+
+    op.parameter_count = 1;
+    op.output_index = a_1;
+
+    switch (activation_function) {
+    case LAYER_OP_NONE:
+        op.id = FUNCTION_OP_COPY;
+        break;
+    case LAYER_OP_RELU:
+        op.id = FUNCTION_OP_RELU;
+        break;
+    case LAYER_OP_SIGMOID:
+        op.id = FUNCTION_OP_SIGMOID;
+        break;
+    case LAYER_OP_SOFTMAX:
+        op.id = FUNCTION_OP_SOFTMAX;
+        break;
+    }
+
+    op_array_append(ops, &op);
+}
+
+static void compile_forwardprop(struct op_array* ops, model_t* model) {
+    struct compilation_context ctx;
+    memset(&ctx, 0, sizeof(struct compilation_context));
+
+    /* first is input matrix */
+    model->compiled.input_index = 0;
+    ctx.working_offset = 1;
+
+    /* then go through layers */
+    for (uint32_t i = 0; i < model->num_layers; i++) {
+        compile_layer_forwardprop(&ctx, ops, model->layers[i].op, i);
+    }
+
+    /* todo: add steps to ops */
+
+    model->compiled.forwardprop = function_compile(ops->count, ops->ops);
+    assert(model->compiled.forwardprop);
+}
+
+static void compile_model(model_t* model) {
+    nv_arena_t* temp = nv_arena_create(4 * 1024 * 1024); /* 4 mb */
+
+    struct op_array ops;
+    memset(&ops, 0, sizeof(struct op_array));
+    ops.arena = temp;
+
+    compile_forwardprop(&ops, model);
+
+    /* clear by resetting length */
+    ops.count = 0;
+
+    /* todo: compile backprop */
+    model->compiled.backprop = NULL;
+
+    nv_arena_destroy(temp);
+}
 
 model_t* model_alloc(uint32_t input_size, uint32_t num_layers,
                      const struct model_layer_spec* layers) {
@@ -39,6 +226,7 @@ model_t* model_alloc(uint32_t input_size, uint32_t num_layers,
         layer->weights = mat_alloc(current_size, previous_size);
     }
 
+    compile_model(model);
     return model;
 }
 
@@ -53,6 +241,9 @@ void model_free(model_t* model) {
         mat_free(layer->biases);
         mat_free(layer->weights);
     }
+
+    function_free(model->compiled.forwardprop);
+    function_free(model->compiled.backprop);
 
     nv_free(model);
 }
