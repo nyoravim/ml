@@ -78,44 +78,54 @@ static void function_op_evaluate(const struct function_op* op, const matrix_t* c
                                  matrix_t* output) {
     switch (op->id) {
     case FUNCTION_OP_NOOP:
-        NV_LOG_TRACE("noop");
+        NV_LOG_TRACE("no-op");
+        assert(op->parameter_count == 0);
+
         break;
     case FUNCTION_OP_ZERO:
+        NV_LOG_TRACE("zero");
         assert(op->parameter_count == 0);
 
         mat_zero(output);
         break;
     case FUNCTION_OP_COPY:
+        NV_LOG_TRACE("copy");
         assert(op->parameter_count == 1);
 
         mat_copy(output, params_data[0]);
         break;
     case FUNCTION_OP_ADD:
+        NV_LOG_TRACE("add");
         assert(op->parameter_count == 1);
 
         mat_add(output, params_data[0], op->flags);
         break;
     case FUNCTION_OP_DOT:
+        NV_LOG_TRACE("dot");
         assert(op->parameter_count == 2);
 
         mat_mul(output, params_data[0], params_data[1], op->flags);
         break;
     case FUNCTION_OP_RELU:
+        NV_LOG_TRACE("relu");
         assert(op->parameter_count == 1);
 
         mat_relu(output, params_data[0]);
         break;
     case FUNCTION_OP_SIGMOID:
+        NV_LOG_TRACE("sigmoid");
         assert(op->parameter_count == 1);
 
         mat_relu(output, params_data[0]);
         break;
     case FUNCTION_OP_SOFTMAX:
+        NV_LOG_TRACE("softmax");
         assert(op->parameter_count == 1);
 
         mat_softmax(output, params_data[0]);
         break;
     case FUNCTION_OP_CROSS_ENTROPY:
+        NV_LOG_TRACE("cross entropy");
         assert(op->parameter_count == 2);
 
         mat_cross_entropy(output, params_data[0], params_data[1]);
@@ -134,29 +144,43 @@ void function_evaluate(const function_t* func, const struct function_context* ct
 
     for (uint32_t i = 0; i < func->op_count; i++) {
         const struct function_op* op = &func->ops[i];
+        NV_LOG_TRACE("evaluating op %u (%u params)", i, op->parameter_count);
+
         if (params_capacity < op->parameter_count) {
+            NV_LOG_TRACE("reallocating temp buffer from %u to %u pointers", params_capacity,
+                         op->parameter_count);
+
             params_data = nv_realloc(params_data, op->parameter_count * sizeof(const matrix_t*));
             params_capacity = op->parameter_count;
         }
 
         for (uint32_t i = 0; i < op->parameter_count; i++) {
             const struct function_op_parameter* param = &op->parameters[i];
+            NV_LOG_TRACE("retrieving param %u", i);
+
             switch (param->source) {
             case PARAMETER_SOURCE_DATA:
+                NV_LOG_TRACE("retrieving data matrix %u", param->index);
                 params_data[i] = ctx->data[param->index];
+
                 break;
             case PARAMETER_SOURCE_WEIGHTS:
+                NV_LOG_TRACE("retrieving weight matrix %u", param->index);
                 params_data[i] = ctx->weights[param->index];
+
                 break;
             default:
-                params_data[i] = NULL;
+                NV_LOG_WARN("invalid parameter source: %u (index %u)", (uint32_t)param->source,
+                            param->index);
 
-                NV_LOG_WARN("invalid parameter source: %u", (uint32_t)param->source);
+                params_data[i] = NULL;
                 break;
             }
         }
 
+        NV_LOG_TRACE("output index: %u", op->output_index);
         matrix_t* output = ctx->data[op->output_index];
+
         function_op_evaluate(op, params_data, output);
     }
 
