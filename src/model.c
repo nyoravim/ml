@@ -197,6 +197,11 @@ static void compile_forwardprop(struct op_array* ops, model_t* model) {
     assert(model->compiled.forwardprop);
 }
 
+static void compile_backprop(struct op_array* ops, model_t* model) {
+    /* todo: compile backprop? im so tired */
+    model->compiled.backprop = NULL;
+}
+
 static void compile_model(model_t* model) {
     nv_arena_t* temp = nv_arena_create(4 * 1024 * 1024); /* 4 mb */
 
@@ -209,8 +214,7 @@ static void compile_model(model_t* model) {
     /* clear by resetting length */
     ops.count = 0;
 
-    /* todo: compile backprop */
-    model->compiled.backprop = NULL;
+    compile_forwardprop(&ops, model);
 
     nv_arena_destroy(temp);
 }
