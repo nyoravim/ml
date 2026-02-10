@@ -197,6 +197,9 @@ static void compile_forwardprop(struct op_array* ops, model_t* model) {
     assert(model->compiled.forwardprop);
 }
 
+static void compile_cost_gradient(struct op_array* ops, const struct compiled_model* compiled) {
+}
+
 static void compile_backprop(struct op_array* ops, model_t* model) {
     /* todo: compile backprop? im so tired */
     model->compiled.backprop = NULL;
@@ -214,7 +217,9 @@ static void compile_model(model_t* model) {
     /* clear by resetting length */
     ops.count = 0;
 
-    compile_forwardprop(&ops, model);
+    /* todo: add nv_arena_reset or something idk */
+
+    compile_backprop(&ops, model);
 
     nv_arena_destroy(temp);
 }
