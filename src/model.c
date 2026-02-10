@@ -18,8 +18,10 @@ struct model_layer {
 };
 
 struct compiled_model {
+    uint32_t data_matrix_count;
+
     function_t* forwardprop;
-    uint32_t input_index, output_index, cost_index;
+    uint32_t expected_index, input_index, output_index, cost_index;
 
     function_t* backprop;
     uint32_t gradient_offset;
@@ -88,14 +90,10 @@ static void get_layer_data_indices(uint32_t offset, uint32_t layer, uint32_t* z,
     }
 }
 
-struct compilation_context {
-    uint32_t working_offset;
-};
-
-static void compile_layer_forwardprop(struct compilation_context* ctx, struct op_array* ops,
+static void compile_layer_forwardprop(uint32_t working_data_offset, struct op_array* ops,
                                       layer_op activation_function, uint32_t layer_index) {
     uint32_t z_1, a_1;
-    get_layer_data_indices(ctx->working_offset, layer_index, &z_1, &a_1);
+    get_layer_data_indices(working_data_offset, layer_index, &z_1, &a_1);
 
     /* last data matrix written to is layer input */
     assert(z_1 > 0);
@@ -119,7 +117,6 @@ static void compile_layer_forwardprop(struct compilation_context* ctx, struct op
     op.parameter_count = 1;
     op.output_index = z_1;
 
-    /* copies all */
     op_array_append(ops, &op);
 
     /* dot from weights and previous activations and add to z */
@@ -159,20 +156,42 @@ static void compile_layer_forwardprop(struct compilation_context* ctx, struct op
     op_array_append(ops, &op);
 }
 
-static void compile_forwardprop(struct op_array* ops, model_t* model) {
-    struct compilation_context ctx;
-    memset(&ctx, 0, sizeof(struct compilation_context));
+static void compile_cost_op(uint32_t working_data_offset, struct op_array* ops, model_t* model) {
+    assert(working_data_offset > 0);
 
-    /* first is input matrix */
-    model->compiled.input_index = 0;
-    ctx.working_offset = 1;
+    model->compiled.cost_index = working_data_offset;
+    model->compiled.output_index = working_data_offset - 1; /* last activation matrix */
+
+    struct function_op_parameter params[2];
+    params[0].source = PARAMETER_SOURCE_DATA;
+    params[0].index = model->compiled.output_index;
+    params[1].source = PARAMETER_SOURCE_DATA;
+    params[1].index = model->compiled.expected_index;
+
+    struct function_op op;
+    memset(&op, 0, sizeof(struct function_op));
+
+    op.id = FUNCTION_OP_CROSS_ENTROPY;
+    op.output_index = model->compiled.cost_index;
+    op.parameter_count = 2;
+    op.parameters = params;
+
+    op_array_append(ops, &op);
+}
+
+static void compile_forwardprop(struct op_array* ops, model_t* model) {
+    /* first is expected & input matrix */
+    model->compiled.expected_index = 0;
+    model->compiled.input_index = 1;
+    uint32_t working_data_offset = 2;
 
     /* then go through layers */
     for (uint32_t i = 0; i < model->num_layers; i++) {
-        compile_layer_forwardprop(&ctx, ops, model->layers[i].op, i);
+        compile_layer_forwardprop(working_data_offset, ops, model->layers[i].op, i);
     }
 
-    /* todo: add steps to ops */
+    working_data_offset += model->num_layers * 2;
+    compile_cost_op(working_data_offset, ops, model);
 
     model->compiled.forwardprop = function_compile(ops->count, ops->ops);
     assert(model->compiled.forwardprop);
