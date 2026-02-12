@@ -62,6 +62,41 @@ function_t* function_compile(uint32_t operation_count, const struct function_op*
 /* see function_t definition above */
 void function_free(function_t* func) { nv_free(func); }
 
+static void apply_relu_gradient(matrix_t* output, const matrix_t* input, const matrix_t* gradient) {
+    float data[input->rows * input->rows];
+
+    matrix_t temp_gradient;
+    temp_gradient.data = data;
+    temp_gradient.rows = temp_gradient.columns = input->rows;
+
+    mat_relu_gradient(&temp_gradient, input);
+    mat_mul(output, &temp_gradient, gradient, MAT_ZERO_RESULT);
+}
+
+static void apply_sigmoid_gradient(matrix_t* output, const matrix_t* input,
+                                   const matrix_t* gradient) {
+    float data[input->rows * input->rows];
+
+    matrix_t temp_gradient;
+    temp_gradient.data = data;
+    temp_gradient.rows = temp_gradient.columns = input->rows;
+
+    mat_sigmoid_gradient(&temp_gradient, input);
+    mat_mul(output, &temp_gradient, gradient, MAT_ZERO_RESULT);
+}
+
+static void apply_softmax_gradient(matrix_t* output, const matrix_t* input,
+                                   const matrix_t* gradient) {
+    float data[input->rows * input->rows];
+
+    matrix_t temp_gradient;
+    temp_gradient.data = data;
+    temp_gradient.rows = temp_gradient.columns = input->rows;
+
+    mat_softmax_gradient(&temp_gradient, input);
+    mat_mul(output, &temp_gradient, gradient, MAT_ZERO_RESULT);
+}
+
 static void function_op_evaluate(const struct function_op* op, const matrix_t* const* params_data,
                                  matrix_t* output) {
     switch (op->id) {
@@ -120,21 +155,21 @@ static void function_op_evaluate(const struct function_op* op, const matrix_t* c
         break;
     case FUNCTION_OP_RELU_GRADIENT:
         NV_LOG_TRACE("relu gradient");
-        assert(op->parameter_count == 1);
+        assert(op->parameter_count == 2);
 
-        mat_relu_gradient(output, params_data[0]);
+        apply_sigmoid_gradient(output, params_data[0], params_data[1]);
         break;
     case FUNCTION_OP_SIGMOID_GRADIENT:
         NV_LOG_TRACE("sigmoid gradient");
-        assert(op->parameter_count == 1);
+        assert(op->parameter_count == 2);
 
-        mat_sigmoid_gradient(output, params_data[0]);
+        apply_sigmoid_gradient(output, params_data[0], params_data[1]);
         break;
     case FUNCTION_OP_SOFTMAX_GRADIENT:
         NV_LOG_TRACE("softmax gradient");
-        assert(op->parameter_count == 1);
+        assert(op->parameter_count == 2);
 
-        mat_softmax_gradient(output, params_data[0]);
+        apply_softmax_gradient(output, params_data[0], params_data[1]);
         break;
     case FUNCTION_OP_CROSS_ENTROPY_GRADIENT:
         NV_LOG_TRACE("cross entropy gradient");

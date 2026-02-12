@@ -18,10 +18,13 @@ typedef enum {
     FUNCTION_OP_SOFTMAX = 7,
     FUNCTION_OP_CROSS_ENTROPY = 8, /* actual, expected */
 
+    /* these three ops expect input and existing gradient.
+     * output is in same dimensions as input and gradient */
     FUNCTION_OP_RELU_GRADIENT = 9,
     FUNCTION_OP_SIGMOID_GRADIENT = 10,
     FUNCTION_OP_SOFTMAX_GRADIENT = 11,
-    FUNCTION_OP_CROSS_ENTROPY_GRADIENT = 12,
+
+    FUNCTION_OP_CROSS_ENTROPY_GRADIENT = 12, /* actual, expected */
 } function_op_id;
 
 typedef enum {
