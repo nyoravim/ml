@@ -41,9 +41,14 @@ void mat_sigmoid(matrix_t* output, const matrix_t* input);
 void mat_softmax(matrix_t* output, const matrix_t* input);
 void mat_cross_entropy(matrix_t* output, const matrix_t* actual, const matrix_t* expected);
 
+/* the following gradient functions output a matrix!
+ * output will be input->rows x input->rows.
+ * input->columns must be 1! */
+
 void mat_relu_gradient(matrix_t* output, const matrix_t* input);
 void mat_sigmoid_gradient(matrix_t* output, const matrix_t* input);
 void mat_softmax_gradient(matrix_t* output, const matrix_t* input);
+
 void mat_cross_entropy_gradient(matrix_t* output, const matrix_t* actual, const matrix_t* expected);
 
 #endif

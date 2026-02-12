@@ -167,55 +167,83 @@ void mat_cross_entropy(matrix_t* output, const matrix_t* actual, const matrix_t*
 }
 
 void mat_relu_gradient(matrix_t* output, const matrix_t* input) {
+    assert(output->rows == output->columns);
     assert(output->rows == input->rows);
-    assert(output->columns == input->columns);
+    assert(input->columns == 1);
 
-    uint32_t total = output->rows * output->columns;
-    for (uint32_t i = 0; i < total; i++) {
+    mat_zero(output);
+
+    for (uint32_t i = 0; i < input->rows; i++) {
         float x = input->data[i];
-        output->data[i] = x > 0.f ? 1.f : 0.f;
+
+        uint32_t output_index = i * (output->columns + 1);
+        output->data[output_index] = x > 0.f ? 1.f : 0.f;
     }
 }
 
 void mat_sigmoid_gradient(matrix_t* output, const matrix_t* input) {
+    assert(output->rows == output->columns);
     assert(output->rows == input->rows);
-    assert(output->columns == input->columns);
+    assert(input->columns == 1);
 
-    uint32_t total = output->rows * output->columns;
-    for (uint32_t i = 0; i < total; i++) {
+    mat_zero(output);
+
+    for (uint32_t i = 0; i < input->rows; i++) {
         float x = input->data[i];
         float sig = sigmoid(x);
 
-        output->data[i] = sig * (1.f - sig);
+        uint32_t output_index = i * (output->columns + 1);
+        output->data[output_index] = sig * (1.f - sig);
     }
 }
+
+/*
+ * input is vector of dc/da_n where n is the row
+ * therefore softmax gradient gotta be a matrix of da_m/dz_n
+ * where n is row, m is column
+ */
 
 void mat_softmax_gradient(matrix_t* output, const matrix_t* input) {
     /*
      * d/dx f(x)/g(x) = (f'(x)g(x) - f(x)g'(x))/(g^2(x))
      * S(x) = (e^x)/sum
-     * S'(x) = (e^x * sum - e^x * e^x)/(sum ^ 2) = S(x) * (sum - e^x)/sum = S(x) * (1 -
-     * S(x))
+     * S'(x) = (e^x * sum - e^x * e^x)/(sum ^ 2) = (e^x)/sum - (e^2x)/(sum^2) = S(x) - S^2(x) = S(x)
+     * * (1 - S(x))
+     *
+     * da_n/dz_n = a_n * (1 - a_n)
+     * da_m/dz_n { m != n } = -(e^z_m)(e^z_n)/sum^2 = -a_m * a_n
      */
 
+    assert(output->rows == output->columns);
     assert(output->rows == input->rows);
-    assert(output->columns == input->columns);
+    assert(input->columns == 1);
 
-    uint32_t total = output->rows * output->columns;
+    float a[input->rows];
     float sum = 0.f;
 
-    for (uint32_t i = 0; i < total; i++) {
+    for (uint32_t i = 0; i < input->rows; i++) {
         float expf_in = expf(input->data[i]);
-        output->data[i] = expf_in;
+        a[i] = expf_in;
 
         sum += expf_in;
     }
 
-    for (uint32_t i = 0; i < total; i++) {
-        float expf_in = output->data[i];
-        float sm = expf_in / sum;
+    for (uint32_t i = 0; i < input->rows; i++) {
+        a[i] /= sum;
+    }
 
-        output->data[i] = sm * (1.f - sm);
+    for (uint32_t n = 0; n < output->rows; n++) {
+        for (uint32_t m = 0; m < output->columns; m++) {
+            uint32_t output_index = n * output->columns + m;
+            float a_n = a[n];
+
+            if (n == m) {
+                output->data[output_index] = a_n * (1.f - a_n);
+            } else {
+                float a_m = a[m];
+                output->data[output_index] = -a_m * a_n;
+            }
+        }
     }
 }
 
