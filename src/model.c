@@ -38,6 +38,7 @@ struct compiled_model {
     uint32_t data_matrix_count;
 
     function_t* forwardprop;
+    uint32_t activations_offset;
     uint32_t expected_index, input_index, output_index, cost_index;
 
     function_t* backprop;
@@ -108,10 +109,13 @@ static void get_layer_data_indices(uint32_t offset, uint32_t layer, uint32_t* z,
     }
 }
 
-static void compile_layer_forwardprop(uint32_t working_data_offset, struct op_array* ops,
+static void compile_forwardprop_layer(uint32_t working_data_offset, struct op_array* ops,
                                       layer_op activation_function, uint32_t layer_index) {
+    NV_LOG_TRACE("compiling forwardprop layer %u", layer_index);
+
     uint32_t z_1, a_1;
     get_layer_data_indices(working_data_offset, layer_index, &z_1, &a_1);
+    NV_LOG_TRACE("z_1: %u; a_1: %u", z_1, a_1);
 
     /* last data matrix written to is layer input */
     assert(z_1 > 0);
@@ -119,6 +123,7 @@ static void compile_layer_forwardprop(uint32_t working_data_offset, struct op_ar
 
     uint32_t w_1, b_1;
     get_layer_matrix_indices(0, layer_index, &w_1, &b_1);
+    NV_LOG_TRACE("w_1: %u; b_1: %u", w_1, b_1);
 
     struct function_op_parameter params[2];
     memset(params, 0, sizeof(params));
@@ -174,11 +179,8 @@ static void compile_layer_forwardprop(uint32_t working_data_offset, struct op_ar
     op_array_append(ops, &op);
 }
 
-static void compile_cost_op(uint32_t working_data_offset, struct op_array* ops, model_t* model) {
-    assert(working_data_offset > 0);
-
-    model->compiled.cost_index = working_data_offset;
-    model->compiled.output_index = working_data_offset - 1; /* last activation matrix */
+static void compile_cost_op(struct op_array* ops, model_t* model) {
+    NV_LOG_TRACE("compiling cost op");
 
     struct function_op_parameter params[2];
     params[0].source = PARAMETER_SOURCE_DATA;
@@ -198,20 +200,28 @@ static void compile_cost_op(uint32_t working_data_offset, struct op_array* ops, 
 }
 
 static void compile_forwardprop(struct op_array* ops, model_t* model) {
+    NV_LOG_TRACE("compiling forwardprop function");
+
     /* first is expected & input matrix */
     model->compiled.expected_index = 0;
     model->compiled.input_index = 1;
-    uint32_t working_data_offset = 2;
+
+    model->compiled.activations_offset = 2;
+    NV_LOG_TRACE("activations start at %u", model->compiled.activations_offset);
 
     /* then go through layers */
     for (uint32_t i = 0; i < model->num_layers; i++) {
-        compile_layer_forwardprop(working_data_offset, ops, model->layers[i].op, i);
+        compile_forwardprop_layer(model->compiled.activations_offset, ops, model->layers[i].op, i);
     }
 
-    working_data_offset += model->num_layers * 2;
-    compile_cost_op(working_data_offset, ops, model);
+    model->compiled.cost_index = model->compiled.activations_offset + model->num_layers * 2;
+    compile_cost_op(ops, model);
+
+    NV_LOG_TRACE("cost index: %u", model->compiled.cost_index);
 
     model->compiled.data_matrix_count = model->compiled.cost_index + 1;
+    NV_LOG_TRACE("data matrices used after forwardprop compilation: %u",
+                 model->compiled.data_matrix_count);
 
     model->compiled.forwardprop = function_compile(ops->count, ops->ops);
     assert(model->compiled.forwardprop);
@@ -287,18 +297,21 @@ static uint32_t compute_activation_gradient(struct op_array* ops, const model_t*
 }
 
 static void compile_backprop_layer(struct op_array* ops, model_t* model, uint32_t layer_index) {
-    uint32_t activation_gradient;
+    NV_LOG_TRACE("compiling backprop layer %u", layer_index);
+
+    uint32_t dc_da_1;
     if (layer_index < model->num_layers - 1) {
-        activation_gradient = compute_activation_gradient(ops, model, layer_index);
+        dc_da_1 = compute_activation_gradient(ops, model, layer_index);
     } else {
         compute_final_activation_gradient(ops, model);
-        activation_gradient = model->compiled.cost_gradient_index;
+        dc_da_1 = model->compiled.cost_gradient_index;
     }
 
-    uint32_t activations_offset = model->compiled.input_index + 1;
+    NV_LOG_TRACE("dc/da_1: %u", dc_da_1);
 
     uint32_t z_1;
-    get_layer_data_indices(activations_offset, layer_index, &z_1, NULL);
+    get_layer_data_indices(model->compiled.activations_offset, layer_index, &z_1, NULL);
+    NV_LOG_TRACE("z_1: %u", z_1);
 
     struct function_op_parameter params[2];
     memset(params, 0, sizeof(struct function_op_parameter) * 2);
@@ -308,7 +321,7 @@ static void compile_backprop_layer(struct op_array* ops, model_t* model, uint32_
     params[1].source = PARAMETER_SOURCE_DATA;
 
     /* existing gradient */
-    params[1].index = activation_gradient;
+    params[1].index = dc_da_1;
     params[1].source = PARAMETER_SOURCE_DATA;
 
     struct function_op op;
@@ -316,6 +329,7 @@ static void compile_backprop_layer(struct op_array* ops, model_t* model, uint32_
 
     uint32_t dc_dw_1, dc_db_1;
     get_layer_matrix_indices(model->compiled.gradient_offset, layer_index, &dc_dw_1, &dc_db_1);
+    NV_LOG_TRACE("dc/dw_1: %u; dc/db_1: %u", dc_dw_1, dc_db_1);
 
     /* identical matrices; biases are just offsets */
     uint32_t dc_dz_1 = dc_db_1;
@@ -331,7 +345,7 @@ static void compile_backprop_layer(struct op_array* ops, model_t* model, uint32_
 
         op.parameter_count = 1;
         op.parameters = &params[1];
-        
+
         break;
     case LAYER_OP_RELU:
         op.id = FUNCTION_OP_RELU_GRADIENT;
@@ -370,9 +384,14 @@ static void compile_backprop_layer(struct op_array* ops, model_t* model, uint32_
 }
 
 static void compile_backprop(struct op_array* ops, model_t* model) {
+    NV_LOG_TRACE("compiling backprop function");
+
     model->compiled.gradient_offset = model->compiled.cost_index + 1;
     model->compiled.activation_gradient_offset =
-        model->compiled.gradient_offset + model->num_layers + 2;
+        model->compiled.gradient_offset + model->num_layers * 2;
+
+    NV_LOG_TRACE("output gradients start at %u", model->compiled.gradient_offset);
+    NV_LOG_TRACE("activation gradients start at %u", model->compiled.activation_gradient_offset);
 
     for (uint32_t i = 0; i < model->num_layers; i++) {
         uint32_t layer_index = model->num_layers - (i + 1);
@@ -381,12 +400,14 @@ static void compile_backprop(struct op_array* ops, model_t* model) {
 
     /* cost gradient matrix is last data matrix */
     model->compiled.data_matrix_count = model->compiled.cost_gradient_index + 1;
+    NV_LOG_TRACE("%u matrices used after backprop compilation", model->compiled.data_matrix_count);
 
-    /* todo: compile backprop? im so tired */
-    model->compiled.backprop = NULL;
+    model->compiled.backprop = function_compile(ops->count, ops->ops);
+    assert(model->compiled.backprop);
 }
 
 static void compile_model(model_t* model) {
+    NV_LOG_TRACE("compiling model (%u layers)", model->num_layers);
     nv_arena_t* temp = nv_arena_create(4 * 1024 * 1024); /* 4 mb */
 
     struct op_array ops;
@@ -402,6 +423,7 @@ static void compile_model(model_t* model) {
 
     compile_backprop(&ops, model);
 
+    NV_LOG_DEBUG("%u-layer model compiled", model->num_layers);
     nv_arena_destroy(temp);
 }
 
