@@ -253,8 +253,6 @@ static uint32_t compute_activation_gradient(struct op_array* ops, const model_t*
                                             uint32_t layer_index) {
     assert(layer_index < model->num_layers - 1);
 
-    uint32_t activations_offset = model->compiled.input_index + 1;
-
     uint32_t w_1;
     get_layer_matrix_indices(0, layer_index, &w_1, NULL);
 
@@ -297,7 +295,78 @@ static void compile_backprop_layer(struct op_array* ops, model_t* model, uint32_
         activation_gradient = model->compiled.cost_gradient_index;
     }
 
-    /* todo: more matrix math */
+    uint32_t activations_offset = model->compiled.input_index + 1;
+
+    uint32_t z_1;
+    get_layer_data_indices(activations_offset, layer_index, &z_1, NULL);
+
+    struct function_op_parameter params[2];
+    memset(params, 0, sizeof(struct function_op_parameter) * 2);
+
+    /* z values */
+    params[0].index = z_1;
+    params[1].source = PARAMETER_SOURCE_DATA;
+
+    /* existing gradient */
+    params[1].index = activation_gradient;
+    params[1].source = PARAMETER_SOURCE_DATA;
+
+    struct function_op op;
+    memset(&op, 0, sizeof(struct function_op));
+
+    uint32_t dc_dw_1, dc_db_1;
+    get_layer_matrix_indices(model->compiled.gradient_offset, layer_index, &dc_dw_1, &dc_db_1);
+
+    /* identical matrices; biases are just offsets */
+    uint32_t dc_dz_1 = dc_db_1;
+
+    op.output_index = dc_dz_1;
+    op.parameter_count = 2;
+    op.parameters = params;
+
+    switch (model->layers[layer_index].op) {
+    case LAYER_OP_NONE:
+        /* da/dz is an identity */
+        op.id = FUNCTION_OP_COPY;
+
+        op.parameter_count = 1;
+        op.parameters = &params[1];
+        
+        break;
+    case LAYER_OP_RELU:
+        op.id = FUNCTION_OP_RELU_GRADIENT;
+        break;
+    case LAYER_OP_SIGMOID:
+        op.id = FUNCTION_OP_SIGMOID_GRADIENT;
+        break;
+    case LAYER_OP_SOFTMAX:
+        op.id = FUNCTION_OP_SOFTMAX_GRADIENT;
+        break;
+    }
+
+    op_array_append(ops, &op);
+
+    /* dc/dw = dc/dz * dz/dw
+     * dz/dw = a_0 (kind of)
+     * dc/dw = dc/dz * transpose(a_0) */
+
+    /* if first layer, will grab input
+     * otherwise, will grab previous activations */
+    uint32_t a_0 = z_1 - 1;
+
+    params[0].index = dc_dz_1;
+    params[0].source = PARAMETER_SOURCE_DATA;
+
+    params[1].index = a_0;
+    params[1].source = PARAMETER_SOURCE_DATA;
+
+    op.id = FUNCTION_OP_DOT;
+    op.flags = MAT_ZERO_RESULT | MAT_TRANSPOSE_RHS;
+    op.parameter_count = 2;
+    op.parameters = params;
+    op.output_index = dc_dw_1;
+
+    op_array_append(ops, &op);
 }
 
 static void compile_backprop(struct op_array* ops, model_t* model) {
