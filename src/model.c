@@ -669,6 +669,8 @@ static bool serialize_model(const model_t* model, FILE* f) {
 }
 
 bool model_write_to_path(const model_t* model, const char* path) {
+    assert(model);
+
     NV_LOG_DEBUG("writing model to path: %s", path);
 
     FILE* f = fopen(path, "wb");
@@ -681,4 +683,229 @@ bool model_write_to_path(const model_t* model, const char* path) {
     fclose(f);
 
     return success;
+}
+
+uint32_t model_get_layer_count(const model_t* model) { return model->num_layers; }
+
+typedef struct eval_context {
+    nv_arena_t* arena;
+
+    model_t* model;
+    uint32_t level;
+
+    matrix_t** data_matrices;
+    struct function_context function_context;
+} eval_context_t;
+
+static void map_weight_matrices(eval_context_t* ctx) {
+    assert(ctx->model);
+
+    size_t ptr_array_size = sizeof(const matrix_t*) * ctx->model->num_layers * 2;
+    const matrix_t** matrix_ptrs = nv_arena_alloc(ctx->arena, ptr_array_size);
+    assert(matrix_ptrs);
+
+    for (uint32_t i = 0; i < ctx->model->num_layers; i++) {
+        const struct model_layer* layer = &ctx->model->layers[i];
+
+        uint32_t weights, biases;
+        get_layer_matrix_indices(0, i, &weights, &biases);
+
+        matrix_ptrs[biases] = layer->biases;
+        matrix_ptrs[weights] = layer->weights;
+    }
+
+    ctx->function_context.weights = matrix_ptrs;
+}
+
+static matrix_t* arena_allocate_matrix(nv_arena_t* arena, uint32_t rows, uint32_t columns) {
+    assert(arena);
+
+    size_t meta_size = sizeof(matrix_t);
+    size_t data_size = sizeof(float) * rows * columns;
+
+    matrix_t* mat = nv_arena_alloc(arena, meta_size + data_size);
+    if (!mat) {
+        return NULL;
+    }
+
+    mat->rows = rows;
+    mat->columns = columns;
+    mat->data = (void*)mat + meta_size;
+
+    return mat;
+}
+
+/* see struct compiled_model for data layout */
+
+static void allocate_forwardprop_matrices(eval_context_t* ctx) {
+    assert(ctx->model->compiled.forwardprop && ctx->data_matrices);
+
+    uint32_t output_count = ctx->model->layers[ctx->model->num_layers - 1].biases->rows;
+    matrix_t* expected_matrix = arena_allocate_matrix(ctx->arena, output_count, 1);
+
+    uint32_t input_count = ctx->model->layers[0].weights->columns;
+    matrix_t* input_matrix = arena_allocate_matrix(ctx->arena, input_count, 1);
+
+    const struct compiled_model* compiled = &ctx->model->compiled;
+    ctx->data_matrices[compiled->expected_index] = expected_matrix;
+    ctx->data_matrices[compiled->input_index] = input_matrix;
+
+    for (uint32_t i = 0; i < ctx->model->num_layers; i++) {
+        uint32_t layer_size = ctx->model->layers[i].biases->rows;
+
+        matrix_t* z = arena_allocate_matrix(ctx->arena, layer_size, 1);
+        matrix_t* a = arena_allocate_matrix(ctx->arena, layer_size, 1);
+
+        uint32_t z_index, a_index;
+        get_layer_data_indices(ctx->model->compiled.activations_offset, i, &z_index, &a_index);
+
+        ctx->data_matrices[z_index] = z;
+        ctx->data_matrices[a_index] = a;
+    }
+
+    matrix_t* cost_matrix = arena_allocate_matrix(ctx->arena, output_count, 1);
+    ctx->data_matrices[ctx->model->compiled.cost_index] = cost_matrix;
+}
+
+static void allocate_backprop_matrices(eval_context_t* ctx) {
+    assert(ctx->model->compiled.backprop && ctx->data_matrices);
+
+    for (uint32_t i = 0; i < ctx->model->num_layers; i++) {
+        const struct model_layer* layer = &ctx->model->layers[i];
+
+        uint32_t layer_size = layer->weights->rows;
+        uint32_t previous_size = layer->weights->columns;
+
+        matrix_t* weights_gradient = arena_allocate_matrix(ctx->arena, layer_size, previous_size);
+        matrix_t* biases_gradient = arena_allocate_matrix(ctx->arena, layer_size, 1);
+        matrix_t* activation_gradient = arena_allocate_matrix(ctx->arena, layer_size, 1);
+
+        uint32_t weights_index, biases_index;
+        get_layer_matrix_indices(ctx->model->compiled.gradient_offset, i, &weights_index,
+                                 &biases_index);
+
+        ctx->data_matrices[weights_index] = weights_gradient;
+        ctx->data_matrices[biases_index] = biases_gradient;
+
+        uint32_t activation_gradient_index = ctx->model->compiled.activation_gradient_offset + i;
+        ctx->data_matrices[activation_gradient_index] = activation_gradient;
+    }
+
+    uint32_t output_count = ctx->model->layers[ctx->model->num_layers].weights->rows;
+    matrix_t* cost_gradient = arena_allocate_matrix(ctx->arena, output_count, 1);
+
+    ctx->data_matrices[ctx->model->compiled.cost_gradient_index] = cost_gradient;
+}
+
+static void allocate_data_matrices(eval_context_t* ctx) {
+    assert(ctx->model);
+
+    size_t data_array_size = ctx->model->compiled.data_matrix_count * sizeof(matrix_t*);
+    ctx->data_matrices = nv_arena_alloc(ctx->arena, data_array_size);
+    assert(ctx->data_matrices);
+
+    if (ctx->level >= EVAL_LEVEL_EVAL) {
+        allocate_forwardprop_matrices(ctx);
+    }
+
+    if (ctx->level >= EVAL_LEVEL_BACKPROP) {
+        allocate_backprop_matrices(ctx);
+    }
+
+    ctx->function_context.data = ctx->data_matrices;
+}
+
+eval_context_t* eval_context_allocate(model_t* model, uint32_t level) {
+    if (!model) {
+        NV_LOG_ERROR("no model passed to eval_context_allocate");
+        return NULL;
+    }
+
+    size_t arena_size = 4 * 1024 * 1024; /* 4 mb; todo: determine dynamic arena size */
+    nv_arena_t* arena = nv_arena_create(arena_size);
+    assert(arena);
+
+    eval_context_t* ctx = nv_arena_alloc(arena, sizeof(eval_context_t));
+    assert(ctx);
+
+    ctx->arena = arena;
+    ctx->model = model;
+    ctx->level = level;
+
+    map_weight_matrices(ctx);
+    allocate_data_matrices(ctx);
+
+    return ctx;
+}
+
+void eval_context_free(eval_context_t* ctx) {
+    if (!ctx) {
+        return;
+    }
+
+    /* will wipe context as well */
+    nv_arena_destroy(ctx->arena);
+}
+
+uint32_t eval_context_get_level(const eval_context_t* ctx) {
+    if (!ctx) {
+        return EVAL_LEVEL_NONE;
+    }
+
+    return ctx->level;
+}
+
+const matrix_t* eval_context_get_output(const eval_context_t* ctx) {
+    if (ctx->level < EVAL_LEVEL_EVAL) {
+        return NULL;
+    }
+
+    uint32_t index;
+    get_layer_data_indices(ctx->model->compiled.activations_offset, ctx->model->num_layers - 1,
+                           NULL, &index);
+
+    return ctx->data_matrices[index];
+}
+
+const matrix_t* eval_context_get_cost(const eval_context_t* ctx) {
+    if (ctx->level < EVAL_LEVEL_EVAL) {
+        return NULL;
+    }
+
+    return ctx->data_matrices[ctx->model->compiled.cost_index];
+}
+
+bool eval_context_get_layer_gradient(const eval_context_t* ctx, uint32_t layer,
+                                     const matrix_t** weights, const matrix_t** biases) {
+    if (ctx->level >= EVAL_LEVEL_BACKPROP || layer < ctx->model->num_layers) {
+        return false;
+    }
+
+    uint32_t weights_index, biases_index;
+    get_layer_matrix_indices(ctx->model->compiled.gradient_offset, layer, &weights_index,
+                             &biases_index);
+
+    if (weights) {
+        *weights = ctx->data_matrices[weights_index];
+    }
+
+    if (biases) {
+        *biases = ctx->data_matrices[biases_index];
+    }
+
+    return true;
+}
+
+void eval_context_eval(eval_context_t* ctx) {
+    NV_LOG_TRACE("evaluating model");
+
+    if (ctx->level >= EVAL_LEVEL_EVAL) {
+        NV_LOG_TRACE("evaluating model forwardprop");
+        function_evaluate(ctx->model->compiled.forwardprop, &ctx->function_context);
+    }
+
+    if (ctx->level >= EVAL_LEVEL_BACKPROP) {
+        NV_LOG_TRACE("evaluating model backprop");
+        function_evaluate(ctx->model->compiled.backprop, &ctx->function_context);
+    }
 }

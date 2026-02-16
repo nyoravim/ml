@@ -20,6 +20,7 @@ struct model_layer_spec {
 };
 
 typedef struct model model_t;
+typedef struct eval_context eval_context_t;
 
 model_t* model_alloc(uint32_t input_size, uint32_t num_layers,
                      const struct model_layer_spec* layers);
@@ -33,5 +34,31 @@ void model_randomize(struct prng* rng, model_t* model);
 
 model_t* model_read_from_path(const char* path);
 bool model_write_to_path(const model_t* model, const char* path);
+
+uint32_t model_get_layer_count(const model_t* model);
+
+enum {
+    /* eval does nothing */
+    EVAL_LEVEL_NONE = 0,
+
+    /* eval only evaluates neural net (forwardpropagation) */
+    EVAL_LEVEL_EVAL = 1,
+
+    /* eval runs backpropagation */
+    EVAL_LEVEL_BACKPROP = 2,
+};
+
+eval_context_t* eval_context_allocate(model_t* model, uint32_t level);
+void eval_context_free(eval_context_t* ctx);
+
+uint32_t eval_context_get_level(const eval_context_t* ctx);
+
+const matrix_t* eval_context_get_output(const eval_context_t* ctx);
+const matrix_t* eval_context_get_cost(const eval_context_t* ctx);
+
+bool eval_context_get_layer_gradient(const eval_context_t* ctx, uint32_t layer,
+                                     const matrix_t** weights, const matrix_t** biases);
+
+void eval_context_eval(eval_context_t* ctx);
 
 #endif
