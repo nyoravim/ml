@@ -5,6 +5,8 @@
 
 #include "data/dataset.h"
 
+#include "ui/panel.h"
+
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -319,6 +321,10 @@ static void run_training(struct model_context* ctx) {
     }
 }
 
+static void render_test_panel(ui_context_t* ctx) {
+    ui_context_render_string(ctx, 0, 0, "Hello ncurses!");
+}
+
 int main(int argc, const char** argv) {
     struct nv_logger_sink stdout_sink;
     nv_create_stdout_sink(&stdout_sink);
@@ -326,11 +332,12 @@ int main(int argc, const char** argv) {
 
     struct nv_logger logger;
     logger.level = NV_LOG_LEVEL_TRACE;
-    logger.sink_count = 1;
+    logger.sink_count = 0; /* temp */
     logger.sinks = &stdout_sink;
 
     nv_set_default_logger(&logger);
 
+    /* temp disable
     struct model_context ctx;
     memset(&ctx, 0, sizeof(struct model_context));
 
@@ -355,4 +362,20 @@ int main(int argc, const char** argv) {
 
     cleanup_context(&ctx);
     return 0;
+    */
+
+    struct panel root;
+    memset(&root, 0, sizeof(struct panel));
+
+    root.id = "test panel";
+    root.user = NULL;
+    root.vtable.render = render_test_panel;
+
+    ui_context_t* ui_ctx = ui_context_alloc();
+    assert(ui_ctx);
+
+    int ret = ui_context_loop(ui_ctx, &root);
+    ui_context_free(ui_ctx);
+
+    return ret;
 }
