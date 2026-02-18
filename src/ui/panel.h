@@ -61,9 +61,14 @@ const struct active_panel* ui_context_get_top_panel(const ui_context_t* ctx);
 bool ui_context_update_top(ui_context_t* ctx);
 bool ui_context_render_top(ui_context_t* ctx);
 
+bool ui_context_get_top_panel_size(const ui_context_t* ctx, uint32_t* width, uint32_t* height);
+
 void ui_context_focus_panel(ui_context_t* ctx, const char* panel_id);
 
 void ui_context_render_char(ui_context_t* ctx, uint32_t x, uint32_t y, char c);
 void ui_context_render_string(ui_context_t* ctx, uint32_t x, uint32_t y, const char* str);
+
+void ui_context_set_cursor_pos(ui_context_t* ctx, uint32_t x, uint32_t y);
+void ui_context_hide_cursor(ui_context_t* ctx);
 
 #endif

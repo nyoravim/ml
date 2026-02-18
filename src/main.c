@@ -322,7 +322,10 @@ static void run_training(struct model_context* ctx) {
 }
 
 static void render_test_panel(ui_context_t* ctx) {
-    ui_context_render_string(ctx, 0, 0, "Hello ncurses!");
+    const char* message = "Hello ncurses!";
+
+    ui_context_render_string(ctx, 0, 0, message);
+    ui_context_set_cursor_pos(ctx, (uint32_t)strlen(message), 0);
 }
 
 int main(int argc, const char** argv) {

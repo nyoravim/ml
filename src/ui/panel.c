@@ -13,12 +13,23 @@
 /* usleep */
 #include <unistd.h>
 
-static uint32_t ncurses_refs = 0;
+struct ncurses_context {
+    uint32_t refs;
+    bool cursor_visible;
+};
+
+static struct ncurses_context* ncurses_ctx = NULL;
 
 static void ncurses_ref() {
-    if (ncurses_refs++ > 0) {
+    if (ncurses_ctx) {
+        ncurses_ctx->refs++;
         return;
     }
+
+    ncurses_ctx = nv_alloc(sizeof(struct ncurses_context));
+    assert(ncurses_ctx);
+
+    ncurses_ctx->refs = 1;
 
     initscr();
     cbreak();
@@ -27,15 +38,30 @@ static void ncurses_ref() {
     intrflush(stdscr, FALSE);
     keypad(stdscr, TRUE);
     nodelay(stdscr, TRUE);
+
+    ncurses_ctx->cursor_visible = true;
     curs_set(1);
 }
 
 static void ncurses_unref() {
-    if (--ncurses_refs > 0) {
+    if (!ncurses_ctx || --ncurses_ctx->refs > 0) {
         return;
     }
 
     endwin();
+
+    nv_free(ncurses_ctx);
+    ncurses_ctx = NULL;
+}
+
+static void ncurses_set_cursor_visibility(bool visible) {
+    assert(ncurses_ctx);
+
+    if (visible != ncurses_ctx->cursor_visible) {
+        curs_set(visible ? 1 : 0);
+    }
+
+    ncurses_ctx->cursor_visible = visible;
 }
 
 struct panel_stack_node {
@@ -53,6 +79,9 @@ typedef struct ui_context {
 
     uint32_t screen_width, screen_height;
     char* screen_buffer;
+
+    uint32_t cursor_x, cursor_y;
+    bool cursor_visible;
 } ui_context_t;
 
 static bool key_equals(void* user, const void* lhs, const void* rhs) {
@@ -162,6 +191,11 @@ static void flush_buffer(const ui_context_t* ctx) {
         mvaddnstr(i, 0, line, ctx->screen_width);
     }
 
+    ncurses_set_cursor_visibility(ctx->cursor_visible);
+    if (ctx->cursor_visible) {
+        move(ctx->cursor_y, ctx->cursor_x);
+    }
+
     refresh();
 }
 
@@ -181,6 +215,14 @@ static void time_diff(const struct timespec* t1, const struct timespec* t0,
     delta->tv_nsec = t1_nsec - t0->tv_nsec;
 }
 
+static void new_frame(ui_context_t* ctx) {
+    validate_buffer_size(ctx);
+    memset(ctx->screen_buffer, ' ', ctx->screen_width * ctx->screen_height);
+
+    /* start with cursor hidden */
+    ui_context_hide_cursor(ctx);
+}
+
 int ui_context_loop(ui_context_t* ctx, const struct panel* root) {
     assert(ctx && root);
 
@@ -188,7 +230,7 @@ int ui_context_loop(ui_context_t* ctx, const struct panel* root) {
     clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &t0);
 
     while (true) {
-        validate_buffer_size(ctx);
+        new_frame(ctx);
 
         /* todo: handle input */
 
@@ -199,11 +241,9 @@ int ui_context_loop(ui_context_t* ctx, const struct panel* root) {
 
         ui_context_push_panel(ctx, root, &bounds, PANEL_VISIBLE);
         ui_context_update_top(ctx);
-
-        memset(ctx->screen_buffer, ' ', ctx->screen_width * ctx->screen_height);
         ui_context_render_top(ctx);
-
         ui_context_pop_panel(ctx);
+
         flush_buffer(ctx);
 
         clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &t1);
@@ -254,6 +294,20 @@ static struct panel_state* get_panel_state(ui_context_t* ctx, const struct panel
     return state;
 }
 
+static void copy_panel_bounds_safe(ui_context_t* ctx, const struct panel_bounds* src,
+                                   struct panel_bounds* dst) {
+    assert(src->x <= ctx->screen_width && src->y <= ctx->screen_height);
+
+    uint32_t max_width = ctx->screen_width - src->x;
+    uint32_t max_height = ctx->screen_height - src->y;
+
+    dst->x = src->x;
+    dst->y = src->y;
+
+    dst->width = src->width > max_width ? max_width : src->width;
+    dst->height = src->height > max_height ? max_height : src->height;
+}
+
 void ui_context_push_panel(ui_context_t* ctx, const struct panel* panel,
                            const struct panel_bounds* bounds, uint32_t flags) {
     assert(ctx);
@@ -261,7 +315,7 @@ void ui_context_push_panel(ui_context_t* ctx, const struct panel* panel,
     struct panel_stack_node* node = nv_arena_alloc(ctx->arena, sizeof(struct panel_stack_node));
     node->lower = ctx->top_panel;
 
-    memcpy(&node->panel.bounds, bounds, sizeof(struct panel_bounds));
+    copy_panel_bounds_safe(ctx, bounds, &node->panel.bounds);
 
     node->panel.state = get_panel_state(ctx, panel);
     assert(node->panel.state);
@@ -331,6 +385,23 @@ bool ui_context_render_top(ui_context_t* ctx) {
     return true;
 }
 
+bool ui_context_get_top_panel_size(const ui_context_t* ctx, uint32_t* width, uint32_t* height) {
+    const struct active_panel* active = ui_context_get_top_panel(ctx);
+    if (!active) {
+        return false;
+    }
+
+    if (width) {
+        *width = active->bounds.width;
+    }
+
+    if (height) {
+        *height = active->bounds.height;
+    }
+
+    return true;
+}
+
 void ui_context_focus_panel(ui_context_t* ctx, const char* panel_id) {
     assert(ctx);
 
@@ -360,4 +431,30 @@ void ui_context_render_string(ui_context_t* ctx, uint32_t x, uint32_t y, const c
     for (size_t i = 0; i < len; i++) {
         ui_context_render_char(ctx, x + (uint32_t)i, y, str[i]);
     }
+}
+
+void ui_context_set_cursor_pos(ui_context_t* ctx, uint32_t x, uint32_t y) {
+    assert(ctx);
+
+    uint32_t abs_x = x;
+    uint32_t abs_y = y;
+
+    const struct active_panel* top = ui_context_get_top_panel(ctx);
+    if (top) {
+        abs_x += top->bounds.x;
+        abs_y += top->bounds.y;
+    }
+
+    assert(abs_x < ctx->screen_width);
+    assert(abs_y < ctx->screen_height);
+
+    ctx->cursor_x = abs_x;
+    ctx->cursor_y = abs_y;
+    ctx->cursor_visible = true;
+}
+
+void ui_context_hide_cursor(ui_context_t* ctx) {
+    assert(ctx);
+
+    ctx->cursor_visible = false;
 }
