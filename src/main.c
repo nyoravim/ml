@@ -5,8 +5,6 @@
 
 #include "data/dataset.h"
 
-#include "ui/panel.h"
-
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -22,6 +20,10 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <errno.h>
+
+#include <tickit.h>
+
+#include "ui/layout.h"
 
 static void draw_matrix(const matrix_t* mat) {
     /* over rows */
@@ -321,11 +323,14 @@ static void run_training(struct model_context* ctx) {
     }
 }
 
-static void render_test_panel(ui_context_t* ctx) {
-    const char* message = "Hello ncurses!";
+static int render_test(TickitWindow* win, TickitEventFlags flags, void* info, void* data) {
+    TickitExposeEventInfo* expose = info;
+    TickitRenderBuffer* rb = expose->rb;
 
-    ui_context_render_string(ctx, 0, 0, message);
-    ui_context_set_cursor_pos(ctx, (uint32_t)strlen(message), 0);
+    tickit_renderbuffer_goto(rb, 0, 0);
+    tickit_renderbuffer_textf(rb, "Hello %u!", (uint32_t)(size_t)data);
+
+    return 1;
 }
 
 int main(int argc, const char** argv) {
@@ -367,18 +372,29 @@ int main(int argc, const char** argv) {
     return 0;
     */
 
-    struct panel root;
-    memset(&root, 0, sizeof(struct panel));
+    Tickit* t = tickit_new_stdtty();
+    if (!t) {
+        return 1;
+    }
 
-    root.id = "test panel";
-    root.user = NULL;
-    root.vtable.render = render_test_panel;
+    TickitWindow* root = tickit_get_rootwin(t);
+    if (!root) {
+        return 1;
+    }
 
-    ui_context_t* ui_ctx = ui_context_alloc();
-    assert(ui_ctx);
+    struct layout_spec spec;
+    spec.split = tickit_window_cols(root) / 2;
+    spec.type = LAYOUT_HORIZONTAL;
 
-    int ret = ui_context_loop(ui_ctx, &root);
-    ui_context_free(ui_ctx);
+    struct layout* layout = layout_create(root, &spec);
+    for (uint32_t i = 0; i < 2; i++) {
+        tickit_window_bind_event(layout->children[i], TICKIT_WINDOW_ON_EXPOSE, 0, render_test,
+                                 (void*)(size_t)i);
+    }
 
-    return ret;
+    tickit_run(t);
+    tickit_window_close(root);
+
+    tickit_unref(t);
+    return 0;
 }
