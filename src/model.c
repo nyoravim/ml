@@ -687,6 +687,13 @@ bool model_write_to_path(const model_t* model, const char* path) {
 
 uint32_t model_get_layer_count(const model_t* model) { return model->num_layers; }
 
+uint32_t model_get_input_count(const model_t* model) { return model->layers[0].weights->columns; }
+
+uint32_t model_get_output_count(const model_t* model) {
+    uint32_t last_layer = model->num_layers - 1;
+    return model->layers[last_layer].weights->rows;
+}
+
 typedef struct eval_context {
     nv_arena_t* arena;
 
@@ -853,6 +860,17 @@ uint32_t eval_context_get_level(const eval_context_t* ctx) {
     }
 
     return ctx->level;
+}
+
+void eval_context_set_input(eval_context_t* ctx, const matrix_t* input) {
+    if (ctx->level < EVAL_LEVEL_EVAL) {
+        return;
+    }
+
+    uint32_t input_index = ctx->model->compiled.input_index;
+    matrix_t* input_matrix = ctx->data_matrices[input_index];
+
+    mat_copy(input_matrix, input);
 }
 
 const matrix_t* eval_context_get_output(const eval_context_t* ctx) {

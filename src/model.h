@@ -37,6 +37,9 @@ bool model_write_to_path(const model_t* model, const char* path);
 
 uint32_t model_get_layer_count(const model_t* model);
 
+uint32_t model_get_input_count(const model_t* model);
+uint32_t model_get_output_count(const model_t* model);
+
 enum {
     /* eval does nothing */
     EVAL_LEVEL_NONE = 0,
@@ -52,6 +55,8 @@ eval_context_t* eval_context_allocate(model_t* model, uint32_t level);
 void eval_context_free(eval_context_t* ctx);
 
 uint32_t eval_context_get_level(const eval_context_t* ctx);
+
+void eval_context_set_input(eval_context_t* ctx, const matrix_t* input);
 
 const matrix_t* eval_context_get_output(const eval_context_t* ctx);
 const matrix_t* eval_context_get_cost(const eval_context_t* ctx);

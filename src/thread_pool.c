@@ -23,10 +23,12 @@ typedef struct thread_pool {
     uint32_t num_workers;
     struct worker* workers;
 
+    uint32_t num_idle;
+    pthread_cond_t thread_idle_signal;
     struct nv_list job_queue;
 
     bool stopping;
-    uint32_t stopped_threads;
+    uint32_t num_threads;
     pthread_cond_t thread_stopped_signal;
 
     thread_pool_callback callback;
@@ -41,7 +43,10 @@ static void* worker_routine(void* user) {
     pthread_mutex_lock(&pool->mutex);
 
     while (!pool->stopping) {
+        pool->num_idle++;
+        pthread_cond_signal(&pool->thread_idle_signal);
         pthread_cond_wait(&pool->wake_signal, &pool->mutex);
+        pool->num_idle--;
 
         while (pool->job_queue.head) {
             void* job = pool->job_queue.head->value;
@@ -61,7 +66,7 @@ static void* worker_routine(void* user) {
         }
     }
 
-    pool->stopped_threads++;
+    pool->num_threads++;
     pthread_cond_signal(&pool->thread_stopped_signal);
 
     pthread_mutex_unlock(&pool->mutex);
@@ -78,12 +83,14 @@ thread_pool_t* thread_pool_new(thread_pool_callback callback, void* user) {
     pool->user = user;
 
     pool->stopping = false;
-    pool->stopped_threads = 0;
+    pool->num_threads = 0;
+    pool->num_idle = 0;
 
     nv_list_init(&pool->job_queue);
 
     pthread_mutex_init(&pool->mutex, NULL);
     pthread_cond_init(&pool->wake_signal, NULL);
+    pthread_cond_init(&pool->thread_idle_signal, NULL);
     pthread_cond_init(&pool->thread_stopped_signal, NULL);
 
     pool->num_workers = (uint32_t)sysconf(_SC_NPROCESSORS_ONLN);
@@ -107,7 +114,7 @@ static void stop_pool(thread_pool_t* pool) {
     pthread_cond_signal(&pool->wake_signal);
 
     /* wait for threads to stop */
-    while (pool->stopped_threads < pool->num_workers) {
+    while (pool->num_threads < pool->num_workers) {
         pthread_cond_wait(&pool->thread_stopped_signal, &pool->mutex);
     }
 
@@ -124,6 +131,7 @@ void thread_pool_destroy(thread_pool_t* pool) {
 
     pthread_mutex_destroy(&pool->mutex);
     pthread_cond_destroy(&pool->wake_signal);
+    pthread_cond_destroy(&pool->thread_idle_signal);
     pthread_cond_destroy(&pool->thread_stopped_signal);
 
     nv_free(pool->workers);
@@ -140,4 +148,11 @@ void thread_pool_push_job(thread_pool_t* pool, void* job) {
 }
 
 void thread_pool_wait_idle(thread_pool_t* pool) {
+    pthread_mutex_lock(&pool->mutex);
+
+    while (pool->num_idle < pool->num_threads) {
+        pthread_cond_wait(&pool->thread_idle_signal, &pool->mutex);
+    }
+
+    pthread_mutex_unlock(&pool->mutex);
 }
