@@ -382,13 +382,23 @@ int main(int argc, const char** argv) {
         return 1;
     }
 
-    struct layout_spec spec;
-    spec.split = tickit_window_cols(root) / 2;
-    spec.type = LAYOUT_HORIZONTAL;
+    struct layout_spec spec[2];
+    spec[0].split = tickit_window_cols(root) / 2;
+    spec[0].type = LAYOUT_HORIZONTAL;
+    spec[1].split = tickit_window_lines(root) / 2;
+    spec[1].type = LAYOUT_VERTICAL;
 
-    struct layout* layout = layout_create(root, &spec);
-    for (uint32_t i = 0; i < 2; i++) {
-        tickit_window_bind_event(layout->children[i], TICKIT_WINDOW_ON_EXPOSE, 0, render_test,
+    struct layout* layouts[2];
+    layouts[0] = layout_create(root, &spec[0]);
+    layouts[1] = layout_create(layouts[0]->children[1], &spec[1]);
+
+    struct TickitWindow* content_windows[3];
+    content_windows[0] = layouts[0]->children[0];
+    content_windows[1] = layouts[1]->children[0];
+    content_windows[2] = layouts[1]->children[1];
+
+    for (uint32_t i = 0; i < 3; i++) {
+        tickit_window_bind_event(content_windows[i], TICKIT_WINDOW_ON_EXPOSE, 0, render_test,
                                  (void*)(size_t)i);
     }
 

@@ -1,5 +1,5 @@
-#ifndef LAYOUT_H
-#define LAYOUT_H
+#ifndef _LAYOUT_H
+#define _LAYOUT_H
 
 #include <tickit.h>
 

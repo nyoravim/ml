@@ -92,10 +92,14 @@ static int render_layout(TickitWindow* window, TickitEventFlags flags, void* inf
     struct layout* layout = user;
     switch (layout->spec.type) {
     case LAYOUT_HORIZONTAL:
-        tickit_renderbuffer_vline_at(rb, 0, bottom, layout->spec.split, TICKIT_LINE_SINGLE, 0);
+        tickit_renderbuffer_vline_at(rb, 0, bottom, layout->spec.split, TICKIT_LINE_SINGLE,
+                                     TICKIT_LINECAP_BOTH);
+
         break;
     case LAYOUT_VERTICAL:
-        tickit_renderbuffer_hline_at(rb, layout->spec.split, 0, right, TICKIT_LINE_SINGLE, 0);
+        tickit_renderbuffer_hline_at(rb, layout->spec.split, 0, right, TICKIT_LINE_SINGLE,
+                                     TICKIT_LINECAP_BOTH);
+
         break;
     }
 
