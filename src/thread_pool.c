@@ -28,12 +28,32 @@ typedef struct thread_pool {
     struct nv_list job_queue;
 
     bool stopping;
-    uint32_t num_threads;
+    uint32_t num_stopped;
     pthread_cond_t thread_stopped_signal;
 
     thread_pool_callback callback;
     void* user;
 } thread_pool_t;
+
+/* assumes this thread owns the mutex lock. be careful! */
+static void worker_work(thread_pool_t* pool) {
+    while (pool->job_queue.head) {
+        void* job = pool->job_queue.head->value;
+        nv_list_remove(&pool->job_queue, pool->job_queue.head);
+
+        /* wont be written to during runtime but better safe than sorry */
+        thread_pool_callback callback = pool->callback;
+        void* user = pool->user;
+
+        /* stay unlocked while job is executing so that we dont hold up the pool coordination */
+        pthread_mutex_unlock(&pool->mutex);
+
+        callback(user, job);
+
+        /* lock again to read */
+        pthread_mutex_lock(&pool->mutex);
+    }
+}
 
 static void* worker_routine(void* user) {
     struct worker* worker = user;
@@ -48,25 +68,10 @@ static void* worker_routine(void* user) {
         pthread_cond_wait(&pool->wake_signal, &pool->mutex);
         pool->num_idle--;
 
-        while (pool->job_queue.head) {
-            void* job = pool->job_queue.head->value;
-            nv_list_remove(&pool->job_queue, pool->job_queue.head);
-
-            /* wont be written to during runtime but better safe than sorry */
-            thread_pool_callback callback = pool->callback;
-            void* user = pool->user;
-
-            /* stay unlocked while job is executing so that we dont hold up the pool coordination */
-            pthread_mutex_unlock(&pool->mutex);
-
-            callback(user, job);
-
-            /* lock again to read */
-            pthread_mutex_lock(&pool->mutex);
-        }
+        worker_work(pool);
     }
 
-    pool->num_threads++;
+    pool->num_stopped++;
     pthread_cond_signal(&pool->thread_stopped_signal);
 
     pthread_mutex_unlock(&pool->mutex);
@@ -83,7 +88,7 @@ thread_pool_t* thread_pool_new(thread_pool_callback callback, void* user) {
     pool->user = user;
 
     pool->stopping = false;
-    pool->num_threads = 0;
+    pool->num_stopped = 0;
     pool->num_idle = 0;
 
     nv_list_init(&pool->job_queue);
@@ -101,7 +106,8 @@ thread_pool_t* thread_pool_new(thread_pool_callback callback, void* user) {
         struct worker* worker = &pool->workers[i];
         worker->pool = pool;
 
-        pthread_create(&worker->thread_id, NULL, NULL, worker);
+        pthread_create(&worker->thread_id, NULL, worker_routine, worker);
+        pthread_detach(worker->thread_id);
     }
 
     return pool;
@@ -111,10 +117,10 @@ static void stop_pool(thread_pool_t* pool) {
     pthread_mutex_lock(&pool->mutex);
 
     pool->stopping = true;
-    pthread_cond_signal(&pool->wake_signal);
+    pthread_cond_broadcast(&pool->wake_signal);
 
     /* wait for threads to stop */
-    while (pool->num_threads < pool->num_workers) {
+    while (pool->num_stopped < pool->num_workers) {
         pthread_cond_wait(&pool->thread_stopped_signal, &pool->mutex);
     }
 
@@ -150,9 +156,11 @@ void thread_pool_push_job(thread_pool_t* pool, void* job) {
 void thread_pool_wait_idle(thread_pool_t* pool) {
     pthread_mutex_lock(&pool->mutex);
 
-    while (pool->num_idle < pool->num_threads) {
+    while (pool->num_idle < pool->num_stopped) {
         pthread_cond_wait(&pool->thread_idle_signal, &pool->mutex);
     }
 
     pthread_mutex_unlock(&pool->mutex);
 }
+
+uint32_t thread_pool_get_num_workers(const thread_pool_t* pool) { return pool->num_workers; }
