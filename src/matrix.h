@@ -36,6 +36,9 @@ void mat_add(matrix_t* lhs, const matrix_t* rhs, uint32_t flags);
 
 void mat_scale(matrix_t* mat, float scalar);
 
+/* mat_scale + mat_add */
+void mat_add_scaled(matrix_t* lhs, const matrix_t* rhs, float scalar, uint32_t flags);
+
 void mat_relu(matrix_t* output, const matrix_t* input);
 void mat_sigmoid(matrix_t* output, const matrix_t* input);
 void mat_softmax(matrix_t* output, const matrix_t* input);

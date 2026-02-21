@@ -686,8 +686,79 @@ bool model_write_to_path(const model_t* model, const char* path) {
 }
 
 uint32_t model_get_layer_count(const model_t* model) { return model->num_layers; }
-
 uint32_t model_get_input_count(const model_t* model) { return model->layers[0].weights->columns; }
+
+static matrix_t* arena_allocate_matrix(nv_arena_t* arena, uint32_t rows, uint32_t columns) {
+    assert(arena);
+
+    size_t meta_size = sizeof(matrix_t);
+    size_t data_size = sizeof(float) * rows * columns;
+
+    matrix_t* mat = nv_arena_alloc(arena, meta_size + data_size);
+    if (!mat) {
+        return NULL;
+    }
+
+    mat->rows = rows;
+    mat->columns = columns;
+    mat->data = (void*)mat + meta_size;
+
+    return mat;
+}
+
+typedef struct model_gradients {
+    uint32_t num_layers;
+    matrix_t** biases;
+    matrix_t** weights;
+} model_gradients_t;
+
+model_gradients_t* model_gradients_alloc(nv_arena_t* arena, const model_t* model) {
+    assert(arena && model);
+
+    model_gradients_t* gradients = nv_arena_alloc(arena, sizeof(model_gradients_t));
+    assert(gradients);
+
+    gradients->num_layers = model->num_layers;
+    gradients->weights = nv_arena_alloc(arena, sizeof(matrix_t*) * gradients->num_layers);
+    gradients->biases = nv_arena_alloc(arena, sizeof(matrix_t*) * gradients->num_layers);
+
+    for (uint32_t i = 0; i < gradients->num_layers; i++) {
+        const struct model_layer* layer = &model->layers[i];
+        uint32_t layer_size = layer->weights->rows;
+        uint32_t prev_size = layer->weights->columns;
+
+        gradients->weights[i] = arena_allocate_matrix(arena, layer_size, prev_size);
+        gradients->biases[i] = arena_allocate_matrix(arena, layer_size, 1);
+    }
+
+    return gradients;
+}
+
+void model_gradients_zero(model_gradients_t* gradients) {
+    for (uint32_t i = 0; i < gradients->num_layers; i++) {
+        mat_zero(gradients->weights[i]);
+        mat_zero(gradients->biases[i]);
+    }
+}
+
+void model_gradients_flush(const model_gradients_t* gradients, float learning_rate,
+                           uint32_t batch_size, model_t* model) {
+    assert(gradients->num_layers == model->num_layers);
+
+    /*
+     * negative: gradient descent, not ascent
+     * learning_rate: we dont want to take big clumsy steps
+     * batch_size: average across batch
+     */
+
+    float scalar = -learning_rate / batch_size;
+    for (uint32_t i = 0; i < model->num_layers; i++) {
+        struct model_layer* layer = &model->layers[i];
+
+        mat_add_scaled(layer->weights, gradients->weights[i], scalar, 0);
+        mat_add_scaled(layer->biases, gradients->biases[i], scalar, 0);
+    }
+}
 
 uint32_t model_get_output_count(const model_t* model) {
     uint32_t last_layer = model->num_layers - 1;
@@ -722,24 +793,6 @@ static void map_weight_matrices(eval_context_t* ctx) {
     }
 
     ctx->function_context.weights = matrix_ptrs;
-}
-
-static matrix_t* arena_allocate_matrix(nv_arena_t* arena, uint32_t rows, uint32_t columns) {
-    assert(arena);
-
-    size_t meta_size = sizeof(matrix_t);
-    size_t data_size = sizeof(float) * rows * columns;
-
-    matrix_t* mat = nv_arena_alloc(arena, meta_size + data_size);
-    if (!mat) {
-        return NULL;
-    }
-
-    mat->rows = rows;
-    mat->columns = columns;
-    mat->data = (void*)mat + meta_size;
-
-    return mat;
 }
 
 /* see struct compiled_model for data layout */
@@ -822,15 +875,11 @@ static void allocate_data_matrices(eval_context_t* ctx) {
     ctx->function_context.data = ctx->data_matrices;
 }
 
-eval_context_t* eval_context_allocate(model_t* model, uint32_t level) {
+eval_context_t* eval_context_allocate(nv_arena_t* arena, model_t* model, uint32_t level) {
     if (!model) {
         NV_LOG_ERROR("no model passed to eval_context_allocate");
         return NULL;
     }
-
-    size_t arena_size = 4 * 1024 * 1024; /* 4 mb; todo: determine dynamic arena size */
-    nv_arena_t* arena = nv_arena_create(arena_size);
-    assert(arena);
 
     eval_context_t* ctx = nv_arena_alloc(arena, sizeof(eval_context_t));
     assert(ctx);
@@ -843,15 +892,6 @@ eval_context_t* eval_context_allocate(model_t* model, uint32_t level) {
     allocate_data_matrices(ctx);
 
     return ctx;
-}
-
-void eval_context_free(eval_context_t* ctx) {
-    if (!ctx) {
-        return;
-    }
-
-    /* will wipe context as well */
-    nv_arena_destroy(ctx->arena);
 }
 
 uint32_t eval_context_get_level(const eval_context_t* ctx) {
@@ -871,6 +911,17 @@ void eval_context_set_input(eval_context_t* ctx, const matrix_t* input) {
     matrix_t* input_matrix = ctx->data_matrices[input_index];
 
     mat_copy(input_matrix, input);
+}
+
+void eval_context_set_expected(eval_context_t* ctx, const matrix_t* expected) {
+    if (ctx->level < EVAL_LEVEL_EVAL) {
+        return;
+    }
+
+    uint32_t expected_index = ctx->model->compiled.expected_index;
+    matrix_t* expected_matrix = ctx->data_matrices[expected_index];
+
+    mat_copy(expected_matrix, expected);
 }
 
 const matrix_t* eval_context_get_output(const eval_context_t* ctx) {
@@ -893,22 +944,22 @@ const matrix_t* eval_context_get_cost(const eval_context_t* ctx) {
     return ctx->data_matrices[ctx->model->compiled.cost_index];
 }
 
-bool eval_context_get_layer_gradient(const eval_context_t* ctx, uint32_t layer,
-                                     const matrix_t** weights, const matrix_t** biases) {
-    if (ctx->level >= EVAL_LEVEL_BACKPROP || layer < ctx->model->num_layers) {
+bool eval_context_add_gradients(const eval_context_t* ctx, model_gradients_t* gradients) {
+    if (ctx->level < EVAL_LEVEL_BACKPROP) {
         return false;
     }
 
-    uint32_t weights_index, biases_index;
-    get_layer_matrix_indices(ctx->model->compiled.gradient_offset, layer, &weights_index,
-                             &biases_index);
+    assert(gradients->num_layers == ctx->model->num_layers);
+    for (uint32_t i = 0; i < ctx->model->num_layers; i++) {
+        uint32_t weights_index, biases_index;
+        get_layer_matrix_indices(ctx->model->compiled.gradient_offset, i, &weights_index,
+                                 &biases_index);
 
-    if (weights) {
-        *weights = ctx->data_matrices[weights_index];
-    }
+        const matrix_t* weights_gradient = ctx->data_matrices[weights_index];
+        mat_add(gradients->weights[i], weights_gradient, 0);
 
-    if (biases) {
-        *biases = ctx->data_matrices[biases_index];
+        const matrix_t* biases_gradient = ctx->data_matrices[biases_index];
+        mat_add(gradients->biases[i], biases_gradient, 0);
     }
 
     return true;

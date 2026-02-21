@@ -110,6 +110,26 @@ void mat_scale(matrix_t* mat, float scalar) {
     }
 }
 
+void mat_add_scaled(matrix_t* lhs, const matrix_t* rhs, float scalar, uint32_t flags) {
+    assert(!(flags & ~(uint32_t)MAT_TRANSPOSE_RHS));
+    bool transpose_rhs = flags & MAT_TRANSPOSE_RHS;
+
+    uint32_t rhs_rows = transpose_rhs ? rhs->columns : rhs->rows;
+    uint32_t rhs_columns = transpose_rhs ? rhs->rows : rhs->columns;
+
+    assert(lhs->rows == rhs_rows);
+    assert(lhs->columns == rhs_columns);
+
+    for (uint32_t m = 0; m < lhs->rows; m++) {
+        for (uint32_t n = 0; n < lhs->columns; n++) {
+            uint32_t lhs_index = m * lhs->columns + n;
+            uint32_t rhs_index = transpose_rhs ? n * lhs->columns + m : m * lhs->columns + n;
+
+            lhs->data[lhs_index] += rhs->data[rhs_index] * scalar;
+        }
+    }
+}
+
 static float sigmoid(float x) { return 1.f / (1.f + expf(-x)); }
 
 void mat_relu(matrix_t* output, const matrix_t* input) {

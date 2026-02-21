@@ -20,6 +20,7 @@ struct model_layer_spec {
 };
 
 typedef struct model model_t;
+typedef struct model_gradients model_gradients_t;
 typedef struct eval_context eval_context_t;
 
 model_t* model_alloc(uint32_t input_size, uint32_t num_layers,
@@ -40,6 +41,15 @@ uint32_t model_get_layer_count(const model_t* model);
 uint32_t model_get_input_count(const model_t* model);
 uint32_t model_get_output_count(const model_t* model);
 
+/* from nyoravim/arena.h */
+typedef struct nv_arena nv_arena_t;
+
+model_gradients_t* model_gradients_alloc(nv_arena_t* arena, const model_t* model);
+
+void model_gradients_zero(model_gradients_t* gradients);
+void model_gradients_flush(const model_gradients_t* gradients, float learning_rate,
+                           uint32_t batch_size, model_t* model);
+
 enum {
     /* eval does nothing */
     EVAL_LEVEL_NONE = 0,
@@ -51,18 +61,17 @@ enum {
     EVAL_LEVEL_BACKPROP = 2,
 };
 
-eval_context_t* eval_context_allocate(model_t* model, uint32_t level);
-void eval_context_free(eval_context_t* ctx);
+eval_context_t* eval_context_allocate(nv_arena_t* arena, model_t* model, uint32_t level);
 
 uint32_t eval_context_get_level(const eval_context_t* ctx);
 
 void eval_context_set_input(eval_context_t* ctx, const matrix_t* input);
+void eval_context_set_expected(eval_context_t* ctx, const matrix_t* expected);
 
 const matrix_t* eval_context_get_output(const eval_context_t* ctx);
 const matrix_t* eval_context_get_cost(const eval_context_t* ctx);
 
-bool eval_context_get_layer_gradient(const eval_context_t* ctx, uint32_t layer,
-                                     const matrix_t** weights, const matrix_t** biases);
+bool eval_context_add_gradients(const eval_context_t* ctx, model_gradients_t* gradients);
 
 void eval_context_eval(eval_context_t* ctx);
 
