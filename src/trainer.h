@@ -32,9 +32,12 @@ void trainer_destroy(trainer_t* trainer);
 void trainer_get_spec(const trainer_t* trainer, struct trainer_spec* spec);
 bool trainer_set_spec(trainer_t* trainer, const struct trainer_spec* spec);
 
-trainer_phase trainer_get_phase(const trainer_t* trainer);
-uint32_t trainer_get_working_entries(const trainer_t* trainer, uint32_t max_entries,
+trainer_phase trainer_get_phase(trainer_t* trainer);
+uint32_t trainer_get_working_entries(trainer_t* trainer, uint32_t max_entries,
                                      struct dataset_entry* entries);
+
+float trainer_get_batch_cost(const trainer_t* trainer);
+float trainer_get_eval_cost(const trainer_t* trainer);
 
 void trainer_start(trainer_t* trainer);
 void trainer_stop(trainer_t* trainer);

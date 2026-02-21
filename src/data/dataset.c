@@ -131,6 +131,8 @@ uint32_t dataset_get_entry(const dataset_t* data, uint32_t index, struct dataset
         }
 
         flags |= DATASET_ENTRY_HAS_IMAGE;
+    } else {
+        entry->image = NULL;
     }
 
     if (index < data->labels.num) {

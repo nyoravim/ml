@@ -152,6 +152,8 @@ static void shuffle_indices(uint32_t* indices, uint32_t count) {
 
 static void trainer_start_training(trainer_t* trainer) {
     struct training_data* phase = &trainer->phase;
+    pthread_mutex_lock(&phase->mutex);
+
     phase->phase = TRAINER_PHASE_TRAINING;
 
     assert(trainer->spec.training_data);
@@ -173,6 +175,8 @@ static void trainer_start_training(trainer_t* trainer) {
     shuffle_indices(training->shuffled_indices, training->entry_count);
     NV_LOG_DEBUG("starting training phase with %u batches (%u entries per batch)",
                  training->batch_count, trainer->spec.batch_size);
+
+    pthread_mutex_unlock(&phase->mutex);
 }
 
 static void trainer_train_on_batch(trainer_t* trainer) {
@@ -235,7 +239,7 @@ static void* manager_routine(void* param) {
     trainer_t* trainer = param;
 
     while (should_manager_continue(trainer)) {
-        switch (trainer->phase.phase) {
+        switch (trainer_get_phase(trainer)) {
         case TRAINER_PHASE_TRAINING:
             trainer_train_on_batch(trainer);
             break;
@@ -355,6 +359,64 @@ bool trainer_set_spec(trainer_t* trainer, const struct trainer_spec* spec) {
     memcpy(&trainer->spec, spec, sizeof(struct trainer_spec));
     return true;
 }
+
+trainer_phase trainer_get_phase(trainer_t* trainer) {
+    pthread_mutex_lock(&trainer->phase.mutex);
+    trainer_phase phase = trainer->phase.phase;
+    pthread_mutex_unlock(&trainer->phase.mutex);
+
+    return phase;
+}
+
+uint32_t trainer_get_working_entries(trainer_t* trainer, uint32_t max_entries,
+                                     struct dataset_entry* entries) {
+    trainer_phase phase = trainer_get_phase(trainer);
+
+    uint32_t entry_count;
+    switch (phase) {
+    case TRAINER_PHASE_TRAINING:
+        entry_count = trainer->spec.batch_size;
+        break;
+    case TRAINER_PHASE_EVAL:
+        entry_count = 0; /* not implemented yet */
+        break;
+    }
+
+    if (entry_count > max_entries) {
+        entry_count = max_entries;
+    }
+
+    if (entries) {
+        for (uint32_t i = 0; i < entry_count; i++) {
+            uint32_t dataset_index;
+            dataset_t* dataset;
+
+            switch (phase) {
+            case TRAINER_PHASE_TRAINING: {
+                dataset = trainer->spec.training_data;
+
+                uint32_t index = trainer->phase.training.batch_index * trainer->spec.batch_size + i;
+                dataset_index = trainer->phase.training.shuffled_indices[index];
+            } break;
+            case TRAINER_PHASE_EVAL:
+                dataset = trainer->spec.test_data;
+
+                assert(false); /* not implemented */
+                break;
+            }
+
+            dataset_get_entry(dataset, dataset_index, &entries[i]);
+        }
+    }
+
+    return entry_count;
+}
+
+float trainer_get_batch_cost(const trainer_t* trainer) {
+    return trainer->phase.training.batch_cost;
+}
+
+float trainer_get_eval_cost(const trainer_t* trainer) { return 0.f; /* not implemented */ }
 
 void trainer_start(trainer_t* trainer) {
     if (trainer->running) {
