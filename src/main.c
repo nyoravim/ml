@@ -1,7 +1,6 @@
 #include "matrix.h"
 #include "model.h"
-
-#include "prng.h"
+#include "trainer.h"
 
 #include "data/dataset.h"
 
@@ -24,6 +23,7 @@
 #include <tickit.h>
 
 #include "ui/layout.h"
+#include "ui/training_menu.h"
 
 static void draw_matrix(const matrix_t* mat) {
     /* over rows */
@@ -175,152 +175,19 @@ static model_t* open_model(const char* path) {
     }
 }
 
-enum { MODE_TRAINING, MODE_EVAL };
-
-struct program_params {
-    uint32_t mode;
-    char* model_path;
-    uint32_t cluster_size;
-    float training_threshold;
-};
-
-static bool parse_program_mode(const char* name, uint32_t* mode) {
-    if (strcmp(name, "training") == 0) {
-        NV_LOG_DEBUG("training selected");
-
-        *mode = MODE_TRAINING;
-        return true;
-    }
-
-    if (strcmp(name, "eval") == 0) {
-        NV_LOG_DEBUG("eval selected");
-
-        *mode = MODE_EVAL;
-        return true;
-    }
-
-    NV_LOG_ERROR("invalid mode: %s", name);
-    return false;
-}
-
-static void print_help(const char* program) {
-    printf("usage: %s [training|eval] [options]\n"
-           "options:\n"
-           "\t-c, --cluster\tcluster size\n"
-           "\t-m, --model\tmodel path\n"
-           "\t-t, --threshold\ttraining threshold\n",
-           program);
-}
-
-static bool parse_params(int argc, const char** argv, struct program_params* params) {
-    if (argc >= 2 && strcmp(argv[1], "--help") == 0) {
-        print_help(argv[0]);
-        exit(0);
-    }
-
-    struct nv_list arguments;
-    nv_list_init(&arguments);
-
-    for (int i = 1; i < argc; i++) {
-        const char* param = argv[i];
-    }
-    if (argc < 2) {
-        NV_LOG_DEBUG("no mode passed; assuming training");
-        params->mode = MODE_TRAINING;
-    } else if (!parse_program_mode(argv[1], &params->mode)) {
-        return false;
-    }
-
-    nv_list_clear(&arguments, NULL, NULL);
-    return true;
-}
+static void print_help(const char* program) { printf("usage: %s [model path]\n", program); }
 
 struct model_context {
     nv_map_t* datasets;
+    trainer_t* trainer;
 
     model_t* model;
     const char* model_path;
-
-    struct program_params params;
 };
 
 static void cleanup_context(const struct model_context* ctx) {
-    nv_free(ctx->params.model_path);
-
     nv_map_free(ctx->datasets);
     model_free(ctx->model);
-}
-
-static float train_on_cluster(struct model_context* ctx, const dataset_t* data,
-                              const uint32_t* indices) {
-    NV_LOG_INFO("todo: train on cluster");
-
-    return 0.f;
-}
-
-/* generates a random uint32_t in the range [a, b) */
-static uint32_t rand_between(uint32_t a, uint32_t b) {
-    uint32_t r = prng_rand_g();
-    return (r % (b - a)) + a;
-}
-
-static float run_training_phase(struct model_context* ctx, const dataset_t* data) {
-    uint32_t num_images = dataset_get_image_count(data);
-    uint32_t num_labels = dataset_get_label_count(data);
-    uint32_t num_entries = num_images < num_labels ? num_images : num_labels;
-
-    uint32_t num_clusters = num_entries / ctx->params.cluster_size;
-    NV_LOG_DEBUG("beginning training phase %ux%u", num_clusters, ctx->params.cluster_size);
-
-    /* shuffle indices */
-    uint32_t total_entries = num_clusters * ctx->params.cluster_size;
-    uint32_t indices[total_entries];
-
-    for (uint32_t i = 0; i < total_entries; i++) {
-        indices[i] = i;
-    }
-
-    for (uint32_t i = 0; i < total_entries - 1; i++) {
-        uint32_t j = rand_between(i + 1, total_entries);
-
-        uint32_t swap = indices[i];
-        indices[i] = indices[j];
-        indices[j] = swap;
-    }
-
-    float avg = 0.f;
-    for (uint32_t i = 0; i < num_clusters; i++) {
-        NV_LOG_DEBUG("training on cluster %u", i);
-
-        uint32_t offset = i * ctx->params.cluster_size;
-        const uint32_t* cluster_indices = indices + offset;
-
-        float cost = train_on_cluster(ctx, data, cluster_indices);
-        avg += cost / num_clusters;
-    }
-
-    return avg;
-}
-
-static void train_for_threshold(struct model_context* ctx, const dataset_t* data) {
-    while (true) {
-    }
-}
-
-static void run_training(struct model_context* ctx) {
-    NV_LOG_INFO("beginning training cycle");
-
-    while (true) {
-        dataset_t* data;
-        if (nv_map_get(ctx->datasets, (void*)DATASET_TRAINING, (void**)&data)) {
-            run_training_phase(ctx, data);
-        } else {
-            NV_LOG_INFO("no training dataset; exiting out of training cycle");
-            break;
-        }
-
-        /* todo: eval */
-    }
 }
 
 static int render_test(TickitWindow* win, TickitEventFlags flags, void* info, void* data) {
@@ -334,6 +201,10 @@ static int render_test(TickitWindow* win, TickitEventFlags flags, void* info, vo
 }
 
 int main(int argc, const char** argv) {
+    if (argc > 1 && strcmp(argv[1], "--help") == 0) {
+        print_help(argv[0]);
+    }
+
     struct nv_logger_sink stdout_sink;
     nv_create_stdout_sink(&stdout_sink);
     stdout_sink.level = NV_LOG_LEVEL_TRACE;
@@ -345,13 +216,8 @@ int main(int argc, const char** argv) {
 
     nv_set_default_logger(&logger);
 
-    /* temp disable
     struct model_context ctx;
     memset(&ctx, 0, sizeof(struct model_context));
-
-    if (!parse_params(argc, argv, &ctx.params)) {
-        cleanup_context(&ctx);
-    }
 
     ctx.datasets = load_datasets();
     if (nv_map_size(ctx.datasets) < DATASET_COUNT) {
@@ -359,26 +225,27 @@ int main(int argc, const char** argv) {
         return 1;
     }
 
-    ctx.model_path = ctx.params.model_path ? ctx.params.model_path : "model.bin";
+    ctx.model_path = argc > 1 ? argv[1] : "model.bin";
     ctx.model = open_model(ctx.model_path);
 
-    switch (ctx.params.mode) {
-    case MODE_TRAINING:
-        run_training(&ctx);
-        break;
-    }
+    struct trainer_spec trainer_spec;
+    trainer_spec.batch_size = 100;
+    trainer_spec.learning_rate = 0.1f;
 
-    cleanup_context(&ctx);
-    return 0;
-    */
+    nv_map_get(ctx.datasets, (void*)DATASET_TRAINING, (void**)&trainer_spec.training_data);
+    nv_map_get(ctx.datasets, (void*)DATASET_TESTING, (void**)&trainer_spec.test_data);
+
+    ctx.trainer = trainer_new(ctx.model, ctx.model_path, &trainer_spec);
 
     Tickit* t = tickit_new_stdtty();
     if (!t) {
+        cleanup_context(&ctx);
         return 1;
     }
 
     TickitWindow* root = tickit_get_rootwin(t);
     if (!root) {
+        cleanup_context(&ctx);
         return 1;
     }
 
@@ -390,21 +257,16 @@ int main(int argc, const char** argv) {
 
     struct layout* layouts[2];
     layouts[0] = layout_create(root, &spec[0]);
-    layouts[1] = layout_create(layouts[0]->children[1], &spec[1]);
+    layouts[1] = layout_create(layouts[0]->children[0], &spec[1]);
 
-    struct TickitWindow* content_windows[3];
-    content_windows[0] = layouts[0]->children[0];
-    content_windows[1] = layouts[1]->children[0];
-    content_windows[2] = layouts[1]->children[1];
-
-    for (uint32_t i = 0; i < 3; i++) {
-        tickit_window_bind_event(content_windows[i], TICKIT_WINDOW_ON_EXPOSE, 0, render_test,
-                                 (void*)(size_t)i);
-    }
+    TickitWindow* training_window = layouts[1]->children[0];
+    create_training_menu(training_window, ctx.trainer);
 
     tickit_run(t);
     tickit_window_close(root);
 
     tickit_unref(t);
+
+    cleanup_context(&ctx);
     return 0;
 }

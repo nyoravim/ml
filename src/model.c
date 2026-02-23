@@ -851,7 +851,7 @@ static void allocate_backprop_matrices(eval_context_t* ctx) {
         ctx->data_matrices[activation_gradient_index] = activation_gradient;
     }
 
-    uint32_t output_count = ctx->model->layers[ctx->model->num_layers].weights->rows;
+    uint32_t output_count = ctx->model->layers[ctx->model->num_layers - 1].weights->rows;
     matrix_t* cost_gradient = arena_allocate_matrix(ctx->arena, output_count, 1);
 
     ctx->data_matrices[ctx->model->compiled.cost_gradient_index] = cost_gradient;

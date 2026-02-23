@@ -280,6 +280,8 @@ trainer_t* trainer_new(model_t* model, const char* disk_path, const struct train
     trainer_t* trainer = nv_arena_alloc(arena, sizeof(trainer_t));
     assert(trainer);
 
+    trainer->arena = arena;
+
     /* no nv_arena_strdup */
     if (disk_path) {
         size_t path_len = strlen(disk_path);
@@ -413,6 +415,7 @@ uint32_t trainer_get_working_entries(trainer_t* trainer, uint32_t max_entries,
 }
 
 float trainer_get_batch_cost(const trainer_t* trainer) {
+    /* nervous if i should add a mutex guarding cost access,,,, hmmm */
     return trainer->phase.training.batch_cost;
 }
 

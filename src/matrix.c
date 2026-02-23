@@ -74,7 +74,7 @@ void mat_mul(matrix_t* result, const matrix_t* lhs, const matrix_t* rhs, uint32_
 
             /* can also be rhs_rows */
             for (uint32_t x = 0; x < lhs_columns; x++) {
-                uint32_t lhs_index = transpose_lhs ? x * lhs_columns + m : m * lhs_columns * x;
+                uint32_t lhs_index = transpose_lhs ? x * lhs_columns + m : m * lhs_columns + x;
                 uint32_t rhs_index = transpose_rhs ? n * rhs_columns + x : x * rhs_columns + n;
 
                 result->data[result_index] += lhs->data[lhs_index] * rhs->data[rhs_index];
