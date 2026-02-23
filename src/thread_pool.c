@@ -44,9 +44,9 @@ static void set_thread_name(pthread_t id, const char* name) {
     char pathbuf[256];
     snprintf(pathbuf, sizeof(pathbuf), "/proc/self/task/%u/comm", (uint32_t)id);
 
-    FILE* comm = fopen(pathbuf, "w");
+    FILE* comm = fopen(pathbuf, "wb");
     if (!comm) {
-        NV_LOG_DEBUG("failed to name thread %u to %s", (uint32_t)id, name);
+        NV_LOG_ERROR("failed to name thread %u to %s", (uint32_t)id, name);
         return;
     }
 
@@ -79,6 +79,9 @@ static void* worker_routine(void* user) {
     /* hold on to a lock for when this thread is not waiting */
     NV_LOG_TRACE("worker %u locking pool mutex to start routine", worker->index);
     pthread_mutex_lock(&pool->mutex);
+
+    /* pool is initially idle, waiting for a job */
+    pool->num_idle++;
 
     while (!pool->stopping) {
         pthread_cond_wait(&pool->wake_signal, &pool->mutex);
@@ -201,7 +204,7 @@ void thread_pool_push_job(thread_pool_t* pool, void* job) {
 void thread_pool_wait_idle(thread_pool_t* pool) {
     pthread_mutex_lock(&pool->mutex);
 
-    while (pool->num_idle < pool->num_stopped) {
+    while (pool->num_idle < pool->num_workers - pool->num_stopped) {
         pthread_cond_wait(&pool->thread_idle_signal, &pool->mutex);
     }
 

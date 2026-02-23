@@ -954,7 +954,8 @@ const matrix_t* eval_context_get_cost(const eval_context_t* ctx) {
         return NULL;
     }
 
-    return ctx->data_matrices[ctx->model->compiled.cost_index];
+    uint32_t cost_index = ctx->model->compiled.cost_index;
+    return ctx->data_matrices[cost_index];
 }
 
 bool eval_context_add_gradients(const eval_context_t* ctx, model_gradients_t* gradients) {

@@ -208,6 +208,18 @@ static int render_test(TickitWindow* win, TickitEventFlags flags, void* info, vo
     return 1;
 }
 
+struct named_windows {
+    TickitWindow* training_menu;
+};
+
+static int render_tick(Tickit* t, TickitEventFlags flags, void* info, void* data) {
+    struct named_windows* windows = data;
+
+    tickit_window_expose(windows->training_menu, NULL);
+
+    return 1;
+}
+
 int main(int argc, const char** argv) {
     if (argc > 1 && strcmp(argv[1], "--help") == 0) {
         print_help(argv[0]);
@@ -278,8 +290,12 @@ int main(int argc, const char** argv) {
     layouts[0] = layout_create(root, &spec[0]);
     layouts[1] = layout_create(layouts[0]->children[0], &spec[1]);
 
-    TickitWindow* training_window = layouts[1]->children[0];
-    create_training_menu(training_window, ctx.trainer);
+    struct named_windows windows;
+    windows.training_menu = layouts[1]->children[0];
+    create_training_menu(windows.training_menu, ctx.trainer);
+
+    int update_interval_ms = 1000 / 60; /* 60 fps */
+    tickit_watch_timer_after_msec(t, update_interval_ms, 0, render_tick, &windows);
 
     tickit_run(t);
     tickit_window_close(root);
