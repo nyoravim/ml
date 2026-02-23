@@ -191,7 +191,9 @@ void function_evaluate(const function_t* func, const struct function_context* ct
 
     for (uint32_t i = 0; i < func->op_count; i++) {
         const struct function_op* op = &func->ops[i];
-        NV_LOG_TRACE("evaluating op %u (%u params)", i, op->parameter_count);
+
+        const char* label = op->label ? op->label : "<unlabeled>";
+        NV_LOG_DEBUG("OP BEGIN %s (index %u; %u params)", label, i, op->parameter_count);
 
         if (params_capacity < op->parameter_count) {
             NV_LOG_TRACE("reallocating temp buffer from %u to %u pointers", params_capacity,
@@ -205,28 +207,41 @@ void function_evaluate(const function_t* func, const struct function_context* ct
             const struct function_op_parameter* param = &op->parameters[i];
             NV_LOG_TRACE("retrieving param %u", i);
 
+            const char* source_name;
+            const matrix_t* param_data;
+
             switch (param->source) {
             case PARAMETER_SOURCE_DATA:
-                NV_LOG_TRACE("retrieving data matrix %u", param->index);
-                params_data[i] = ctx->data[param->index];
+                source_name = "data";
+                param_data = ctx->data[param->index];
 
                 break;
             case PARAMETER_SOURCE_WEIGHTS:
-                NV_LOG_TRACE("retrieving weight matrix %u", param->index);
-                params_data[i] = ctx->weights[param->index];
+                source_name = "weights";
+                param_data = ctx->weights[param->index];
 
                 break;
             default:
                 NV_LOG_WARN("invalid parameter source: %u (index %u)", (uint32_t)param->source,
                             param->index);
 
-                params_data[i] = NULL;
+                param_data = NULL;
                 break;
             }
+
+            if (param_data) {
+                NV_LOG_DEBUG("parameter %u: %s matrix %u; dimensions %ux%u", i, source_name,
+                             param->index, param_data->rows, param_data->columns);
+            }
+
+            params_data[i] = param_data;
         }
 
         NV_LOG_TRACE("output index: %u", op->output_index);
         matrix_t* output = ctx->data[op->output_index];
+
+        NV_LOG_DEBUG("output matrix: data %u, %ux%u", op->output_index, output->rows,
+                     output->columns);
 
         function_op_evaluate(op, params_data, output);
     }

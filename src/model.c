@@ -136,6 +136,7 @@ static void compile_forwardprop_layer(uint32_t working_data_offset, struct op_ar
     params[0].source = PARAMETER_SOURCE_WEIGHTS;
     params[0].index = b_1;
 
+    op.label = "z_0 = b";
     op.id = FUNCTION_OP_COPY;
     op.parameter_count = 1;
     op.output_index = z_1;
@@ -148,6 +149,7 @@ static void compile_forwardprop_layer(uint32_t working_data_offset, struct op_ar
     params[1].source = PARAMETER_SOURCE_DATA;
     params[1].index = a_0;
 
+    op.label = "z = w * a_prev + z_0";
     op.id = FUNCTION_OP_DOT;
     op.parameter_count = 2;
     op.output_index = z_1;
@@ -158,6 +160,7 @@ static void compile_forwardprop_layer(uint32_t working_data_offset, struct op_ar
     params[0].source = PARAMETER_SOURCE_DATA;
     params[0].index = z_1;
 
+    op.label = "activation function";
     op.parameter_count = 1;
     op.output_index = a_1;
 
@@ -191,6 +194,7 @@ static void compile_cost_op(struct op_array* ops, model_t* model) {
     struct function_op op;
     memset(&op, 0, sizeof(struct function_op));
 
+    op.label = "cost function";
     op.id = FUNCTION_OP_CROSS_ENTROPY;
     op.output_index = model->compiled.cost_index;
     op.parameter_count = 2;
@@ -213,6 +217,9 @@ static void compile_forwardprop(struct op_array* ops, model_t* model) {
     for (uint32_t i = 0; i < model->num_layers; i++) {
         compile_forwardprop_layer(model->compiled.activations_offset, ops, model->layers[i].op, i);
     }
+
+    get_layer_data_indices(model->compiled.activations_offset, model->num_layers - 1, NULL,
+                           &model->compiled.output_index);
 
     model->compiled.cost_index = model->compiled.activations_offset + model->num_layers * 2;
     compile_cost_op(ops, model);
@@ -249,6 +256,7 @@ static void compute_final_activation_gradient(struct op_array* ops, model_t* mod
     struct function_op op;
     memset(&op, 0, sizeof(struct function_op));
 
+    op.label = "cost function gradient";
     op.id = FUNCTION_OP_CROSS_ENTROPY_GRADIENT;
     op.parameter_count = 2;
     op.parameters = params;
@@ -263,17 +271,19 @@ static uint32_t compute_activation_gradient(struct op_array* ops, const model_t*
                                             uint32_t layer_index) {
     assert(layer_index < model->num_layers - 1);
 
-    uint32_t w_1;
-    get_layer_matrix_indices(0, layer_index, &w_1, NULL);
+    uint32_t next_layer = layer_index + 1;
+
+    uint32_t w_2;
+    get_layer_matrix_indices(0, next_layer, &w_2, NULL);
 
     /* bias gradient is dc/dz_2 */
     uint32_t dc_dz_2;
-    get_layer_matrix_indices(model->compiled.gradient_offset, layer_index + 1, NULL, &dc_dz_2);
+    get_layer_matrix_indices(model->compiled.gradient_offset, next_layer, NULL, &dc_dz_2);
 
     struct function_op_parameter params[2];
     memset(params, 0, sizeof(struct function_op_parameter) * 2);
 
-    params[0].index = w_1;
+    params[0].index = w_2;
     params[0].source = PARAMETER_SOURCE_WEIGHTS;
 
     params[1].index = dc_dz_2;
@@ -284,6 +294,7 @@ static uint32_t compute_activation_gradient(struct op_array* ops, const model_t*
     struct function_op op;
     memset(&op, 0, sizeof(struct function_op));
 
+    op.label = "activation gradient";
     op.id = FUNCTION_OP_DOT;
     op.output_index = gradient_index;
     op.parameter_count = 2;
@@ -334,6 +345,7 @@ static void compile_backprop_layer(struct op_array* ops, model_t* model, uint32_
     /* identical matrices; biases are just offsets */
     uint32_t dc_dz_1 = dc_db_1;
 
+    op.label = "biases gradient";
     op.output_index = dc_dz_1;
     op.parameter_count = 2;
     op.parameters = params;
@@ -374,6 +386,7 @@ static void compile_backprop_layer(struct op_array* ops, model_t* model, uint32_
     params[1].index = a_0;
     params[1].source = PARAMETER_SOURCE_DATA;
 
+    op.label = "weights gradient";
     op.id = FUNCTION_OP_DOT;
     op.flags = MAT_ZERO_RESULT | MAT_TRANSPOSE_RHS;
     op.parameter_count = 2;

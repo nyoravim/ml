@@ -78,6 +78,15 @@ static void* worker_routine(void* user) {
     return NULL;
 }
 
+static uint32_t get_worker_count() {
+#ifdef ML_DEBUG
+    /* single-threaded makes it easier to debug log messages lol */
+    return 1;
+#else
+    return (uint32_t)sysconf(_SC_NPROCESSORS_ONLN);
+#endif
+}
+
 thread_pool_t* thread_pool_new(thread_pool_callback callback, void* user) {
     assert(callback);
 
@@ -98,7 +107,7 @@ thread_pool_t* thread_pool_new(thread_pool_callback callback, void* user) {
     pthread_cond_init(&pool->thread_idle_signal, NULL);
     pthread_cond_init(&pool->thread_stopped_signal, NULL);
 
-    pool->num_workers = (uint32_t)sysconf(_SC_NPROCESSORS_ONLN);
+    pool->num_workers = get_worker_count();
     pool->workers = nv_alloc(sizeof(struct worker) * pool->num_workers);
     assert(pool->workers);
 

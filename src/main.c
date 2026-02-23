@@ -181,11 +181,19 @@ struct model_context {
     nv_map_t* datasets;
     trainer_t* trainer;
 
+    FILE* log_file;
+
     model_t* model;
     const char* model_path;
 };
 
 static void cleanup_context(const struct model_context* ctx) {
+    if (ctx->log_file) {
+        fclose(ctx->log_file);
+    }
+
+    trainer_destroy(ctx->trainer);
+
     nv_map_free(ctx->datasets);
     model_free(ctx->model);
 }
@@ -203,21 +211,32 @@ static int render_test(TickitWindow* win, TickitEventFlags flags, void* info, vo
 int main(int argc, const char** argv) {
     if (argc > 1 && strcmp(argv[1], "--help") == 0) {
         print_help(argv[0]);
+        return 0;
     }
 
+    struct model_context ctx;
+    memset(&ctx, 0, sizeof(struct model_context));
+
+    ctx.log_file = fopen("ml.log", "w");
+    if (!ctx.log_file) {
+        fprintf(stderr, "failed to open log file!\n");
+        return 1;
+    }
+
+    /* remove line buffering in case of crash */
+    setvbuf(ctx.log_file, NULL, _IONBF, 0);
+
     struct nv_logger_sink stdout_sink;
-    nv_create_stdout_sink(&stdout_sink);
+    stdout_sink.on_log = nv_log_print_to_file;
+    stdout_sink.user = ctx.log_file;
     stdout_sink.level = NV_LOG_LEVEL_TRACE;
 
     struct nv_logger logger;
     logger.level = NV_LOG_LEVEL_TRACE;
-    logger.sink_count = 0; /* temp */
+    logger.sink_count = 1;
     logger.sinks = &stdout_sink;
 
     nv_set_default_logger(&logger);
-
-    struct model_context ctx;
-    memset(&ctx, 0, sizeof(struct model_context));
 
     ctx.datasets = load_datasets();
     if (nv_map_size(ctx.datasets) < DATASET_COUNT) {

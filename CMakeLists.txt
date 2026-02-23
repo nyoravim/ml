@@ -16,3 +16,5 @@ target_link_libraries(
     tickit
     termkey
 )
+
+target_compile_definitions(ml PRIVATE $<$<CONFIG:Debug>:ML_DEBUG>)

@@ -67,15 +67,23 @@ void mat_mul(matrix_t* result, const matrix_t* lhs, const matrix_t* rhs, uint32_
     if (flags & MAT_ZERO_RESULT) {
         mat_zero(result);
     }
+    
+    uint32_t result_size = lhs_rows * rhs_columns;
+    uint32_t lhs_size = lhs_rows * lhs_columns;
+    uint32_t rhs_size = rhs_rows * rhs_columns;
 
     for (uint32_t m = 0; m < lhs_rows; m++) {
         for (uint32_t n = 0; n < rhs_columns; n++) {
             uint32_t result_index = m * rhs_columns + n;
+            assert(result_index < result_size);
 
             /* can also be rhs_rows */
             for (uint32_t x = 0; x < lhs_columns; x++) {
-                uint32_t lhs_index = transpose_lhs ? x * lhs_columns + m : m * lhs_columns + x;
-                uint32_t rhs_index = transpose_rhs ? n * rhs_columns + x : x * rhs_columns + n;
+                uint32_t lhs_index = m * lhs_columns + x;
+                assert(lhs_index < lhs_size);
+
+                uint32_t rhs_index = x * rhs_columns + n;
+                assert(rhs_index < rhs_size);
 
                 result->data[result_index] += lhs->data[lhs_index] * rhs->data[rhs_index];
             }
@@ -93,10 +101,14 @@ void mat_add(matrix_t* lhs, const matrix_t* rhs, uint32_t flags) {
     assert(lhs->rows == rhs_rows);
     assert(lhs->columns == rhs_columns);
 
+    uint32_t size = lhs->rows * lhs->columns;
     for (uint32_t m = 0; m < lhs->rows; m++) {
         for (uint32_t n = 0; n < lhs->columns; n++) {
             uint32_t lhs_index = m * lhs->columns + n;
-            uint32_t rhs_index = transpose_rhs ? n * lhs->columns + m : m * lhs->columns + n;
+            assert(lhs_index < size);
+
+            uint32_t rhs_index = transpose_rhs ? n * rhs_columns + m : m * rhs_columns + n;
+            assert(rhs_index < size);
 
             lhs->data[lhs_index] += rhs->data[rhs_index];
         }
@@ -120,10 +132,14 @@ void mat_add_scaled(matrix_t* lhs, const matrix_t* rhs, float scalar, uint32_t f
     assert(lhs->rows == rhs_rows);
     assert(lhs->columns == rhs_columns);
 
+    uint32_t size = lhs->rows * lhs->columns;
     for (uint32_t m = 0; m < lhs->rows; m++) {
         for (uint32_t n = 0; n < lhs->columns; n++) {
             uint32_t lhs_index = m * lhs->columns + n;
-            uint32_t rhs_index = transpose_rhs ? n * lhs->columns + m : m * lhs->columns + n;
+            assert(lhs_index < size);
+
+            uint32_t rhs_index = transpose_rhs ? n * rhs_columns + m : m * rhs_columns + n;
+            assert(rhs_index < size);
 
             lhs->data[lhs_index] += rhs->data[rhs_index] * scalar;
         }

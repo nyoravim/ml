@@ -38,6 +38,9 @@ struct function_op_parameter {
 };
 
 struct function_op {
+    /* function will not copy this! retain ownership */
+    const char* label;
+
     function_op_id id;
     uint32_t flags;
 
