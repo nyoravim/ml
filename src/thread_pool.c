@@ -4,9 +4,12 @@
 #include <stdint.h>
 
 #include <assert.h>
+#include <string.h>
+#include <stdio.h>
 
 #include <nyoravim/mem.h>
 #include <nyoravim/list.h>
+#include <nyoravim/log.h>
 
 #include <pthread.h>
 #include <unistd.h>
@@ -14,6 +17,7 @@
 struct worker {
     pthread_t thread_id;
     thread_pool_t* pool;
+    uint32_t index;
 };
 
 typedef struct thread_pool {
@@ -35,42 +39,73 @@ typedef struct thread_pool {
     void* user;
 } thread_pool_t;
 
-/* assumes this thread owns the mutex lock. be careful! */
-static void worker_work(thread_pool_t* pool) {
-    while (pool->job_queue.head) {
-        void* job = pool->job_queue.head->value;
-        nv_list_remove(&pool->job_queue, pool->job_queue.head);
+/* dirty! but pthread_setname_np is nonstandard */
+static void set_thread_name(pthread_t id, const char* name) {
+    char pathbuf[256];
+    snprintf(pathbuf, sizeof(pathbuf), "/proc/self/task/%u/comm", (uint32_t)id);
 
-        /* wont be written to during runtime but better safe than sorry */
-        thread_pool_callback callback = pool->callback;
-        void* user = pool->user;
-
-        /* stay unlocked while job is executing so that we dont hold up the pool coordination */
-        pthread_mutex_unlock(&pool->mutex);
-
-        callback(user, job);
-
-        /* lock again to read */
-        pthread_mutex_lock(&pool->mutex);
+    FILE* comm = fopen(pathbuf, "w");
+    if (!comm) {
+        NV_LOG_DEBUG("failed to name thread %u to %s", (uint32_t)id, name);
+        return;
     }
+
+    /* comm file can be a max of 16 bytes including '\0' */
+    char namebuf[16];
+    size_t max_characters = sizeof(namebuf) - 1;
+
+    namebuf[max_characters] = '\0';
+    strncpy(namebuf, name, max_characters);
+
+    fwrite(namebuf, 1, strlen(namebuf) + 1, comm);
+    fflush(comm);
+
+    fclose(comm);
+}
+
+static void worker_name_self(const struct worker* worker) {
+    char thread_name[256];
+    snprintf(thread_name, sizeof(thread_name), "worker %u", worker->index);
+
+    set_thread_name(worker->thread_id, thread_name);
 }
 
 static void* worker_routine(void* user) {
     struct worker* worker = user;
     thread_pool_t* pool = worker->pool;
 
+    worker_name_self(worker);
+
     /* hold on to a lock for when this thread is not waiting */
+    NV_LOG_TRACE("worker %u locking pool mutex to start routine", worker->index);
     pthread_mutex_lock(&pool->mutex);
 
     while (!pool->stopping) {
-        pool->num_idle++;
-        pthread_cond_signal(&pool->thread_idle_signal);
         pthread_cond_wait(&pool->wake_signal, &pool->mutex);
         pool->num_idle--;
 
-        worker_work(pool);
+        while (pool->job_queue.head) {
+            void* job = pool->job_queue.head->value;
+            nv_list_remove(&pool->job_queue, pool->job_queue.head);
+
+            /* wont be written to during runtime but better safe than sorry */
+            thread_pool_callback callback = pool->callback;
+            void* user = pool->user;
+
+            /* stay unlocked while job is executing so that we dont hold up the pool coordination */
+            pthread_mutex_unlock(&pool->mutex);
+
+            callback(user, job);
+
+            /* lock again to read */
+            pthread_mutex_lock(&pool->mutex);
+        }
+
+        pool->num_idle++;
+        pthread_cond_signal(&pool->thread_idle_signal);
     }
 
+    NV_LOG_TRACE("worker %u stopped", worker->index);
     pool->num_stopped++;
     pthread_cond_signal(&pool->thread_stopped_signal);
 
@@ -114,6 +149,7 @@ thread_pool_t* thread_pool_new(thread_pool_callback callback, void* user) {
     for (uint32_t i = 0; i < pool->num_workers; i++) {
         struct worker* worker = &pool->workers[i];
         worker->pool = pool;
+        worker->index = i;
 
         pthread_create(&worker->thread_id, NULL, worker_routine, worker);
         pthread_detach(worker->thread_id);
