@@ -71,6 +71,8 @@ struct async_job {
 
 static void prepare_eval_context(eval_context_t* ctx, uint32_t output_count,
                                  const struct dataset_entry* entry) {
+    NV_LOG_TRACE("initial ctx: %p", ctx);
+
     /* convert the label (integer) to vector */
     float expected[output_count];
     memset(expected, 0, output_count * sizeof(float));
@@ -87,6 +89,8 @@ static void prepare_eval_context(eval_context_t* ctx, uint32_t output_count,
     expected_matrix.rows = output_count;
     expected_matrix.columns = 1;
     expected_matrix.data = expected;
+
+    NV_LOG_TRACE("final ctx: %p", ctx);
 
     eval_context_set_input(ctx, &input_matrix);
     eval_context_set_expected(ctx, &expected_matrix);
@@ -115,6 +119,7 @@ static void trainer_job(void* user, void* job) {
         /* also need a label */
         assert(flags & DATASET_ENTRY_HAS_LABEL);
 
+        NV_LOG_TRACE("data->eval_context: %p", data->eval_context);
         prepare_eval_context(data->eval_context, output_count, &entry);
         mat_free(entry.image);
 

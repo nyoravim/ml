@@ -188,14 +188,14 @@ struct model_context {
 };
 
 static void cleanup_context(const struct model_context* ctx) {
-    if (ctx->log_file) {
-        fclose(ctx->log_file);
-    }
-
     trainer_destroy(ctx->trainer);
 
     nv_map_free(ctx->datasets);
     model_free(ctx->model);
+
+    if (ctx->log_file) {
+        fclose(ctx->log_file);
+    }
 }
 
 static int render_test(TickitWindow* win, TickitEventFlags flags, void* info, void* data) {
@@ -210,6 +210,8 @@ static int render_test(TickitWindow* win, TickitEventFlags flags, void* info, vo
 
 struct named_windows {
     TickitWindow* training_menu;
+
+    uint32_t refresh_interval;
 };
 
 static int render_tick(Tickit* t, TickitEventFlags flags, void* info, void* data) {
@@ -217,6 +219,7 @@ static int render_tick(Tickit* t, TickitEventFlags flags, void* info, void* data
 
     tickit_window_expose(windows->training_menu, NULL);
 
+    tickit_watch_timer_after_msec(t, windows->refresh_interval, 0, render_tick, windows);
     return 1;
 }
 
@@ -294,8 +297,8 @@ int main(int argc, const char** argv) {
     windows.training_menu = layouts[1]->children[0];
     create_training_menu(windows.training_menu, ctx.trainer);
 
-    int update_interval_ms = 1000 / 60; /* 60 fps */
-    tickit_watch_timer_after_msec(t, update_interval_ms, 0, render_tick, &windows);
+    windows.refresh_interval = 1000 / 60; /* 60 fps */
+    tickit_watch_timer_after_msec(t, windows.refresh_interval, 0, render_tick, &windows);
 
     tickit_run(t);
     tickit_window_close(root);
